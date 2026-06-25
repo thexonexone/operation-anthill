@@ -306,8 +306,8 @@ public sealed partial class FileAnt : BaseAnt
         candidates.AddRange(QuotedPath().Matches(text).Select(m => m.Groups[1].Value));
         candidates.AddRange(SuffixPath().Matches(text).Select(m => m.Value));
         var lowered = text.ToLowerInvariant();
-        if (new[] { "anthill", "this script", "main script", "python script" }.Any(lowered.Contains))
-            candidates.Add("anthill.py");
+        if (new[] { "anthill", "this script", "main script" }.Any(lowered.Contains))
+            candidates.Add("src/Anthill.Core/Orchestration/Queen.cs");
         var cleaned = new List<string>();
         var seen = new HashSet<string>();
         foreach (var raw in candidates)
@@ -319,7 +319,7 @@ public sealed partial class FileAnt : BaseAnt
     }
 
     [GeneratedRegex("['\"]([^'\"]+\\.[A-Za-z0-9]+)['\"]")] private static partial Regex QuotedPath();
-    [GeneratedRegex(@"\b[\w\-/\\.]+\.(?:py|txt|md|json|yaml|yml|toml|ini|cfg|log|csv|html|css|js|ts|tsx|jsx|xml)\b")] private static partial Regex SuffixPath();
+    [GeneratedRegex(@"\b[\w\-/\\.]+\.(?:cs|csproj|sln|py|txt|md|json|yaml|yml|toml|ini|cfg|log|csv|html|css|js|ts|tsx|jsx|xml)\b")] private static partial Regex SuffixPath();
 }
 
 public sealed class CoderAnt : BaseAnt
@@ -339,6 +339,8 @@ ANTHILL v{AnthillRuntime.Version} | role: coder | timestamp: {AnthillTime.NowUtc
 You are concise. Do not explain your reasoning unless asked.
 
 You are Coder Ant inside ANTHILL v{AnthillRuntime.Version}.
+
+This is a .NET 9 / C# codebase. All source files use C# (.cs). Do not propose Python, JavaScript, or any other language files unless the task explicitly requires them.
 
 Your role:
 Create structured patch proposals as JSON only.
@@ -367,7 +369,7 @@ Required format:
   ""summary"": ""Brief summary."",
   ""proposals"": [
     {{
-      ""file_path"": ""relative/path/to/file.py"",
+      ""file_path"": ""src/Anthill.Core/Example/MyClass.cs"",
       ""change_type"": ""modify"",
       ""reason"": ""Why this change is recommended."",
       ""risk"": ""Risk level and what should be reviewed."",
@@ -517,5 +519,63 @@ Rules:
         if (completed.Count >= 2)
             return "Verification Passed\nReasoning: Mission has completed task output and at least one builder/coder result.\nMissing Steps: None identified by static verification.\nRisk Notes: Static verification does not evaluate factual content.";
         return "Needs Improvement\nReasoning: Mission may not have enough completed task output.\nMissing Steps: More task output may be needed before finalizing.\nRisk Notes: Output may be incomplete.";
+    }
+}
+
+/// <summary>
+/// A runtime ant instantiated from a user-defined or Queen-spawned <see cref="AntDefinition"/>.
+/// It injects the user's system prompt plus standard mission context, then routes to the
+/// configured model (or falls back to the definition's name as a route key).
+/// </summary>
+public sealed class DynamicAnt : BaseAnt
+{
+    private readonly AntDefinition _def;
+    private readonly SqliteMemory _memory;
+    private readonly ToolRegistry _tools;
+    private readonly ModelRouter? _router;
+
+    public DynamicAnt(AntDefinition def, SqliteMemory memory, ToolRegistry tools, ModelRouter? router)
+        : base(def.Name)
+    {
+        _def = def; _memory = memory; _tools = tools; _router = router;
+    }
+
+    public override string Run(Task task, Mission mission)
+    {
+        if (_router is null || !AnthillRuntime.UseOllama)
+            return $"[{_def.DisplayName}] No LLM router available.\n\nTask: {task.Title}\n{task.Description}";
+
+        var recentMemory = _memory.FormatRecentMemory(AnthillRuntime.RecentMemoryLimit, AnthillRuntime.MemoryResultChars);
+        var pheromones = _memory.FormatPheromoneContext(8);
+        var priorOutputs = DomainHelpers.BuildContextPacketText(mission, _def.Name, AnthillRuntime.MaxContextPacketChars);
+
+        var toolSection = "";
+        foreach (var toolName in _def.AllowedTools)
+        {
+            try
+            {
+                var r = _tools.RunTool(toolName, mission.Id, task.Id, Name);
+                toolSection += $"\nTool: {toolName}\n{(r.Success ? r.Output : r.Error)}\n";
+            }
+            catch { /* tool unavailable — skip */ }
+        }
+
+        var context = TextUtil.Truncate(
+            $"Mission: {mission.Goal}\n\nTask: {task.Title}\n{task.Description}\n\n" +
+            $"Recent Memory:\n{recentMemory}\n\nPheromone Context:\n{pheromones}\n\n" +
+            $"Prior Ant Outputs:\n{priorOutputs}" +
+            (toolSection.Length > 0 ? $"\n\nTool Results:{toolSection}" : ""),
+            AnthillRuntime.MaxContextPacketChars, "...[context truncated]");
+
+        var route = string.IsNullOrWhiteSpace(_def.ModelRoute) ? _def.Name : _def.ModelRoute;
+        var prompt = $"{AnthillRuntime.PromptInjectionPrefix}\n" +
+                     $"ANTHILL v{AnthillRuntime.Version} | role: {_def.Name} | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(mission.Goal, 180)}\n\n" +
+                     $"{_def.SystemPrompt}\n\n" +
+                     $"Context:\n{context}\n";
+
+        var response = _router.Generate(route, prompt, mission.Id, task.Id, Name);
+        return response.StartsWith("ERROR:")
+            ? $"[{_def.DisplayName}] Model call failed ({response}).\n\nFallback context:\n{context}"
+            : response;
     }
 }

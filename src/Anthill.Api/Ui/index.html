@@ -220,6 +220,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 }
 .send-btn:hover:not(:disabled){opacity:.85;}
 .send-btn:disabled{opacity:.28;cursor:default;}
+.ov-mission-textarea{resize:none;height:auto;min-height:38px;line-height:1.5;padding-top:9px;padding-bottom:9px;overflow-y:hidden;}
 .bar-hint{font-size:9px;color:var(--dim);margin-top:3px;text-align:center;}
 
 /* ── Cards / Panels ────────────────────────────────────────────────────────── */
@@ -270,6 +271,7 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .job-btn.view{color:var(--blue);border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.08);}
 .job-btn.cancel{color:var(--red);border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08);}
 .job-btn:hover{opacity:.75;}
+.job-btn.redispatch{color:var(--queen);border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.08);}
 
 /* ── Approvals ─────────────────────────────────────────────────────────────── */
 .approval-item{padding:8px;background:var(--inner);border-radius:4px;border:1px solid rgba(251,191,36,.2);margin-bottom:6px;}
@@ -381,6 +383,22 @@ input,select,textarea{font-family:inherit;font-size:inherit;}
 .phero-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
 .phero-net.pos{color:var(--green);}
 .phero-net.neg{color:var(--red);}
+
+/* ── Custom Ant Creation & Pheromone Connections ──────────────────────────── */
+.create-ant-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+.create-ant-form .full{grid-column:1/-1;}
+.create-ant-form textarea{resize:vertical;min-height:80px;}
+.custom-ant-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:12px;}
+.custom-ant-card{background:var(--inner);border:1px solid var(--border);border-radius:var(--r);padding:12px;position:relative;}
+.custom-ant-card .ca-name{font-weight:700;font-size:12px;color:var(--queen);margin-bottom:4px;}
+.custom-ant-card .ca-desc{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px;}
+.custom-ant-card .ca-badge{font-size:9px;color:var(--dim);font-family:var(--mono);background:rgba(255,255,255,.05);border-radius:3px;padding:1px 5px;}
+.custom-ant-card .ca-actions{display:flex;gap:6px;margin-top:8px;}
+.phero-conn-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px;}
+.phero-conn-table th{text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim);font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+.phero-conn-table td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.03);}
+.conn-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;margin-top:10px;}
+.ant-spawned-badge{font-size:9px;color:var(--queen);border:1px solid rgba(251,191,36,.3);border-radius:3px;padding:1px 5px;margin-left:6px;}
 
 /* ── Users Table ───────────────────────────────────────────────────────────── */
 .users-table{width:100%;border-collapse:collapse;font-size:12px;}
@@ -596,6 +614,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span id="bell-count"></span>
         </button>
+        <button class="hdr-btn" id="restart-btn" title="Restart API">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.36"/></svg>
+        </button>
         <button class="hdr-btn" id="logout-btn" title="Sign Out">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
@@ -637,7 +658,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="padding:14px 16px;">
           <div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Dispatch Mission</div>
           <div class="mission-row">
-            <input class="mission-input" id="ov-mission-input" type="text" placeholder="Enter a mission directive..." autocomplete="off" disabled style="position:relative;">
+            <textarea class="mission-input ov-mission-textarea" id="ov-mission-input" placeholder="Enter a mission directive..." autocomplete="off" disabled rows="2"></textarea>
             <button class="send-btn" id="ov-send-btn" disabled title="Dispatch (Enter)">▶</button>
           </div>
           <div class="bar-hint">Enter or ▶ to dispatch → Queen orchestrates the colony</div>
@@ -849,6 +870,44 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px 0;">Loading...</div>
           </div>
         </div>
+
+        <!-- Pheromone Connections -->
+        <div style="margin-top:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--fg);">Pheromone Connections</div>
+              <div class="sub">Explicit wires between ant roles — visible on the colony canvas and injected as context hints</div>
+            </div>
+          </div>
+          <div class="card" style="padding:14px 18px;">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Add a directed connection from one ant role to another. The label and strength appear as pheromone guidance in the Planner context.</div>
+            <div class="conn-form">
+              <div>
+                <label class="set-label" style="margin-bottom:4px;">Source Ant</label>
+                <select class="set-input" id="conn-src" style="margin-bottom:0;"></select>
+              </div>
+              <div>
+                <label class="set-label" style="margin-bottom:4px;">Target Ant</label>
+                <select class="set-input" id="conn-tgt" style="margin-bottom:0;"></select>
+              </div>
+              <div>
+                <label class="set-label" style="margin-bottom:4px;">Label <span style="color:var(--dim)">(optional)</span></label>
+                <input class="set-input" id="conn-label" placeholder="feeds into" style="margin-bottom:0;" autocomplete="off">
+              </div>
+              <div>
+                <label class="set-label" style="margin-bottom:4px;">Strength</label>
+                <input class="set-input" id="conn-strength" type="number" min="0.1" max="10" step="0.1" value="1.0" style="margin-bottom:0;width:80px;">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+              <button class="btn btn-primary" id="conn-add">Add Connection</button>
+              <span class="save-msg" id="conn-msg"></span>
+            </div>
+            <div id="conn-list" style="margin-top:14px;">
+              <div style="font-size:10px;color:var(--dim);">No connections yet.</div>
+            </div>
+          </div>
+        </div>
       </div><!-- /page-pheromones -->
 
       <!-- ════════════════════════════════════════════════════════════════════
@@ -865,6 +924,60 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
         <div class="antcfg-grid" id="antcfg-grid">
           <div style="font-size:10px;color:var(--dim);text-align:center;padding:20px;grid-column:1/-1;">Loading...</div>
+        </div>
+
+        <!-- Custom Ant Registry -->
+        <div style="margin-top:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--fg);">Custom Ants</div>
+              <div class="sub" id="custom-ant-count">No custom ants yet</div>
+            </div>
+            <button class="btn btn-primary" id="create-ant-btn">+ Create New Ant</button>
+          </div>
+
+          <!-- Create Ant Form (hidden by default) -->
+          <div class="card" id="create-ant-form-card" style="display:none;padding:16px 18px;max-width:700px;margin-bottom:16px;">
+            <div style="font-size:12px;font-weight:700;color:var(--queen);margin-bottom:12px;">New Ant Definition</div>
+            <div class="create-ant-form">
+              <div>
+                <label class="set-label">Role Name <span style="color:var(--dim)">(slug: letters/digits/_)</span></label>
+                <input class="set-input" id="new-ant-name" placeholder="security_reviewer" autocomplete="off">
+              </div>
+              <div>
+                <label class="set-label">Display Name</label>
+                <input class="set-input" id="new-ant-display" placeholder="Security Reviewer" autocomplete="off">
+              </div>
+              <div class="full">
+                <label class="set-label">Description <span style="color:var(--dim)">(shown to Planner — what tasks to assign here)</span></label>
+                <input class="set-input" id="new-ant-desc" placeholder="Performs security audits and vulnerability assessments on code and configurations." autocomplete="off">
+              </div>
+              <div class="full">
+                <label class="set-label">System Prompt <span style="color:var(--dim)">(injected into every task run)</span></label>
+                <textarea class="set-input" id="new-ant-prompt" rows="4" placeholder="You are a security specialist. Analyze the provided context for vulnerabilities, misconfigurations, and risks. Produce a structured report with: Findings, Severity (Critical/High/Medium/Low), and Recommended fixes."></textarea>
+              </div>
+              <div>
+                <label class="set-label">Model Route <span style="color:var(--dim)">(blank = auto)</span></label>
+                <select class="set-input" id="new-ant-model">
+                  <option value="">— default model —</option>
+                </select>
+              </div>
+              <div>
+                <label class="set-label">Allowed Tools <span style="color:var(--dim)">(comma-separated)</span></label>
+                <input class="set-input" id="new-ant-tools" placeholder="system_info, list_directory" autocomplete="off">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button class="btn btn-primary" id="create-ant-submit">Create Ant</button>
+              <button class="btn btn-ghost" id="create-ant-cancel">Cancel</button>
+              <span class="save-msg" id="create-ant-msg"></span>
+            </div>
+          </div>
+
+          <!-- Custom Ant List -->
+          <div class="custom-ant-list" id="custom-ant-list">
+            <div style="font-size:10px;color:var(--dim);padding:10px 0;">Loading custom ants...</div>
+          </div>
         </div>
       </div><!-- /page-antconfig -->
 
@@ -913,6 +1026,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <input class="set-input" id="set-ollama-host" type="text" placeholder="http://127.0.0.1:11434">
             <label class="set-label">Default Model</label>
             <input class="set-input" id="set-ollama-model" type="text" placeholder="llama3.1:8b">
+
+            <div class="section-head">Workspace</div>
+            <label class="set-label">Agent Workspace Directory <span style="font-size:9px;color:var(--dim);font-family:var(--mono);">(relative to server or absolute — patches resolve here)</span></label>
+            <input class="set-input" id="set-workspace-dir" type="text" placeholder="data/workspace">
 
             <div class="section-head">Feature Toggles</div>
             <div id="set-toggles"></div>
@@ -1250,8 +1367,8 @@ function showPage(id){
   if(ht) ht.textContent=PAGE_TITLES[id]||id;
   // Per-page onEnter
   if(typeof PAGE_ENTER[id]==='function') PAGE_ENTER[id]();
-  // Canvas resize when switching to colony
-  if(id==='colony') setTimeout(()=>{ resize(); buildNodes(); },50);
+  // Canvas resize when switching to colony — fetch custom ants first so they appear in the diagram
+  if(id==='colony') setTimeout(()=>{ resize(); loadCustomAnts(); },50);
 }
 
 // Nav item clicks
@@ -1331,6 +1448,9 @@ const colonyActivity={ researcher:0, web:0, file:0, coder:0, builder:0, verifier
 let totalModelCalls=0, modelCallRate=0, colonyRunning=false;
 let nodes=[], edges=[], dataFlowEdges=[], particles=[], selectedNode=null, hoveredNode=null;
 
+const BUILTIN_ANTS=['researcher','web','file','coder','builder','verifier'];
+let _allAntNames=[...BUILTIN_ANTS]; // populated by loadCustomAnts(); initialised here so buildNodes() can reference it safely
+
 function buildNodes(){
   nodes=[]; edges=[];
   const bR=Math.min(W,H)*0.27;
@@ -1351,6 +1471,19 @@ function buildNodes(){
       edges.push({from:b.ant,to:sid});
     }
   });
+  // Custom ants in an outer orbit
+  const customNames=_allAntNames.filter(n=>!BUILTIN_ANTS.includes(n));
+  if(customNames.length){
+    const outerR=bR*1.5;
+    customNames.forEach((name,i)=>{
+      const angle=(360/customNames.length)*i-90;
+      const rad=angle*Math.PI/180;
+      const entry=ANT_MAP[name]||{color:'#a78bfa',label:name,role:'DYNAMIC'};
+      nodes.push({id:name,ant:name,x:cx+Math.cos(rad)*outerR,y:cy+Math.sin(rad)*outerR,label:entry.label,role:entry.role,color:entry.color,r:ANT_R,pp:Math.random()*Math.PI*2,activity:0});
+      edges.push({from:'queen',to:name});
+      if(!(name in colonyActivity)) colonyActivity[name]=0;
+    });
+  }
   applyUiState();
 }
 buildNodes();
@@ -1620,7 +1753,7 @@ async function pollStatus(){
   }catch{ setConnected(false); }
 }
 
-function renderJobList(jobs, listId, badgeId, limit){
+function renderJobList(jobs, listId, badgeId, limit, showRedispatch){
   const badge=document.getElementById(badgeId);
   if(badge) badge.textContent=jobs.length;
   const list=document.getElementById(listId);
@@ -1629,6 +1762,7 @@ function renderJobList(jobs, listId, badgeId, limit){
   list.innerHTML=jobs.slice(0,limit||8).map(j=>{
     const isRunning=j.status==='running';
     const isDone=j.status==='complete'||j.status==='failed'||j.status==='partial';
+    const goalEsc=(j.goal||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
     return `<div class="job-item${selectedJobId===j.id?' selected':''}" data-id="${j.id}" onclick="selectJob('${j.id}')">
       <div class="job-top">
         <span class="job-status ${j.status}">${j.status}</span>
@@ -1638,9 +1772,18 @@ function renderJobList(jobs, listId, badgeId, limit){
       <div class="job-actions">
         ${isDone||isRunning?`<button class="job-btn view" onclick="event.stopPropagation();selectJob('${j.id}')">View Result</button>`:''}
         ${isRunning?`<button class="job-btn cancel" onclick="event.stopPropagation();cancelJob('${j.id}')">Cancel</button>`:''}
+        ${showRedispatch&&!isRunning?`<button class="job-btn redispatch" onclick="event.stopPropagation();redispatchJob('${goalEsc}')">↺ Redispatch</button>`:''}
       </div>
     </div>`;
   }).join('');
+}
+
+function redispatchJob(goal){
+  const inp=document.getElementById('ov-mission-input');
+  if(!inp) return;
+  inp.value=goal;
+  inp.focus();
+  inp.dispatchEvent(new Event('input'));
 }
 
 async function pollJobs(){
@@ -1657,7 +1800,7 @@ async function pollJobs(){
     else{dot.className='dot';goalEl.textContent='Idle — no active mission';}
     // Render to all job list containers
     renderJobList(jobs,'jobs-list','jobs-badge',8);
-    renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5);
+    renderJobList(jobs,'ov-jobs-list','ov-jobs-badge',5,true);
     renderJobList(jobs,'ms-jobs-list','ms-jobs-badge',20);
     // Nav badge
     const navBadge=document.getElementById('nav-jobs-badge');
@@ -1820,9 +1963,48 @@ async function doApproval(id,action){
   try{
     const endpoint=action==='approve'?`/approve/${id}`:`/reject/${id}`;
     await fetch(url(endpoint),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(action==='approve'){
+      // Immediately attempt to apply the patch now that it's approved.
+      const applyRes=await fetch(url(`/apply/${id}`),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+      const applyText=await applyRes.text();
+      const applyOk=applyText.includes('applied successfully');
+      showApplyToast(applyOk, applyOk?'Patch applied successfully.':applyText);
+    }
     pollApprovals(); pollStatus();
   }catch(e){console.error('Approval error',e);}
 }
+
+function showApplyToast(ok, msg){
+  const div=document.createElement('div');
+  const color=ok?'rgba(16,185,129,.4)':'rgba(239,68,68,.4)';
+  const textColor=ok?'var(--green)':'var(--red)';
+  div.style.cssText=`position:fixed;top:56px;right:12px;background:var(--panel);border:1px solid ${color};color:${textColor};padding:10px 14px;border-radius:6px;font-size:11px;max-width:380px;z-index:9999;white-space:pre-wrap;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,.4);`;
+  div.textContent=(ok?'✓ ':'✕ ')+msg.substring(0,320);
+  const close=document.createElement('button');
+  close.textContent='✕';close.style.cssText='float:right;background:none;border:none;color:inherit;cursor:pointer;font-size:12px;margin-left:8px;padding:0;';
+  close.onclick=()=>div.remove();
+  div.prepend(close);
+  document.body.appendChild(div);
+  setTimeout(()=>div.remove(),ok?5000:12000);
+}
+
+document.getElementById('restart-btn').addEventListener('click',async()=>{
+  if(!confirm('Restart the ANTHILL API process? The page will reconnect automatically.')) return;
+  const btn=document.getElementById('restart-btn');
+  btn.style.color='var(--queen)';
+  btn.disabled=true;
+  try{
+    await fetch(url('/restart'),{method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+  }catch{}
+  // Poll until the API comes back, then reload.
+  setConnected(false);
+  const check=setInterval(async()=>{
+    try{
+      const r=await fetch(url('/'),{signal:AbortSignal.timeout(1500)});
+      if(r.ok){clearInterval(check);location.reload();}
+    }catch{}
+  },1200);
+});
 
 async function cancelJob(id){
   if(!confirm('Cancel this running job?')) return;
@@ -1904,6 +2086,7 @@ async function dispatchMission(inputId){
   if(!input) return;
   const val=input.value.trim(); if(!val) return;
   input.value='';
+  input.dispatchEvent(new Event('input'));
   enableInput(false);
   try{
     const r=await api('/missions','POST',{goal:val});
@@ -1921,7 +2104,9 @@ document.getElementById('mission-input').addEventListener('keydown',e=>{if(e.key
 document.getElementById('send-btn').addEventListener('click',()=>dispatchMission('mission-input'));
 document.getElementById('ms-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ms-mission-input');});
 document.getElementById('ms-send-btn').addEventListener('click',()=>dispatchMission('ms-mission-input'));
-document.getElementById('ov-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter')dispatchMission('ov-mission-input');});
+function ovTextareaGrow(){const t=document.getElementById('ov-mission-input');if(!t)return;t.style.height='auto';t.style.height=t.scrollHeight+'px';}
+document.getElementById('ov-mission-input').addEventListener('input',ovTextareaGrow);
+document.getElementById('ov-mission-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();dispatchMission('ov-mission-input');}});
 document.getElementById('ov-send-btn').addEventListener('click',()=>dispatchMission('ov-mission-input'));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2228,7 +2413,8 @@ function casteColor(caste){return uiState.castes[caste]?.color||ANT_DEFAULTS[cas
 
 function applyUiState(){
   if(!uiReady) return;
-  ANT_CASTES.forEach(c=>{if(ANT_MAP[c]) ANT_MAP[c].color=casteColor(c);});
+  // Include custom ants alongside built-ins so their colours apply too
+  _allAntNames.forEach(c=>{if(ANT_MAP[c]) ANT_MAP[c].color=casteColor(c);});
   nodes.forEach(n=>{
     const caste=n.ant||'queen';
     const base=casteName(caste);
@@ -2275,26 +2461,32 @@ async function fetchModelNames(){
     const r=await fetch(url('/ollama/models'),{headers:{'Authorization':'Bearer '+TOKEN}});
     const d=await r.json();
     availableModels=(d.models||[]).map(m=>m.name||m.model).filter(Boolean);
-  }catch{availableModels=[];}
+  }catch{ /* keep whatever was cached */ }
 }
 
-async function openAntConfig(){
-  showPage('antconfig');
-  await fetchModelNames();
-  let routes={};
-  try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
-  const grid=document.getElementById('antcfg-grid');
-  const castes=['queen',...ANT_CASTES];
+let _antcfgRoutes={};
+
+function buildModelOptions(curModel){
+  const opts=[`<option value="">— default —</option>`];
+  availableModels.forEach(m=>opts.push(`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`));
+  if(curModel&&!availableModels.includes(curModel))
+    opts.push(`<option value="${curModel}" selected>${curModel} (current)</option>`);
+  return opts.join('');
+}
+
+function renderAntCfgGrid(routes){
+  _antcfgRoutes=routes||{};
+  const grid=document.getElementById('antcfg-grid'); if(!grid) return;
+  const customNames=_allAntNames.filter(n=>!BUILTIN_ANTS.includes(n));
+  const castes=['queen',...BUILTIN_ANTS,...customNames];
   grid.innerHTML=castes.map(c=>{
-    const d=ANT_DEFAULTS[c],name=casteName(c),color=casteColor(c);
-    const curModel=uiState.castes[c]?.model||routes[c]?.model||'';
+    const d=ANT_DEFAULTS[c]||ANT_MAP[c]||{role:'DYNAMIC'},name=casteName(c),color=casteColor(c);
+    const curModel=uiState.castes[c]?.model||_antcfgRoutes[c]?.model||'';
     const modelField=c==='queen'?'':`
       <div class="antcfg-field">
         <label>Model (route)</label>
         <select data-caste="${c}" class="antcfg-model">
-          <option value="">— default —</option>
-          ${availableModels.map(m=>`<option value="${m}"${m===curModel?' selected':''}>${m}</option>`).join('')}
-          ${curModel&&!availableModels.includes(curModel)?`<option value="${curModel}" selected>${curModel} (current)</option>`:''}
+          ${buildModelOptions(curModel)}
         </select>
       </div>`;
     return `<div class="antcfg-card">
@@ -2307,6 +2499,23 @@ async function openAntConfig(){
       ${modelField}
     </div>`;
   }).join('');
+}
+
+function refreshAntCfgSelects(){
+  document.querySelectorAll('.antcfg-model').forEach(sel=>{
+    const curModel=sel.value;
+    sel.innerHTML=buildModelOptions(curModel);
+  });
+}
+
+async function openAntConfig(){
+  showPage('antconfig');
+  // Render immediately with cached models so the grid is never blank
+  let routes=_antcfgRoutes;
+  try{const s=await api('/settings');if(s.success) routes=s.data.model_routes||{};}catch{}
+  renderAntCfgGrid(routes);
+  // Refresh model list from Ollama in the background; update selects when done
+  fetchModelNames().then(refreshAntCfgSelects);
 }
 
 PAGE_ENTER['antconfig']=()=>openAntConfig();
@@ -2375,17 +2584,186 @@ document.getElementById('phero-prune').addEventListener('click',async()=>{
   setTimeout(()=>msg.textContent='',3000);
 });
 
+// ── Dynamic Ant Registry ──────────────────────────────────────────────────────
+
+// _allAntNames declared near BUILTIN_ANTS above (before buildNodes() is called)
+
+function _antSelectOptions(selectedVal){
+  const all=['researcher','web','file','coder','builder','verifier',..._allAntNames.filter(n=>!['researcher','web','file','coder','builder','verifier'].includes(n))];
+  return [...new Set(all)].map(n=>`<option value="${n}"${n===selectedVal?' selected':''}>${n}</option>`).join('');
+}
+
+async function loadCustomAnts(){
+  const list=document.getElementById('custom-ant-list');
+  const countEl=document.getElementById('custom-ant-count');
+  try{
+    const r=await api('/ants');
+    if(!r.success){if(list) list.innerHTML='<div style="color:var(--dim);font-size:11px;">Unavailable.</div>';return;}
+    const custom=(r.data.custom||[]);
+    _allAntNames=[...BUILTIN_ANTS,...custom.map(a=>a.name)];
+    // Register custom ants in ANT_MAP and ANT_DEFAULTS so the diagram and colour system know about them
+    custom.forEach(a=>{
+      const entry={color:'#a78bfa',label:a.display_name||a.name,role:'DYNAMIC'};
+      if(!ANT_MAP[a.name]) ANT_MAP[a.name]=entry;
+      if(!ANT_DEFAULTS[a.name]) ANT_DEFAULTS[a.name]=entry;
+    });
+    buildNodes();
+    refreshConnDropdowns();
+    if(countEl) countEl.textContent=custom.length?`${custom.length} custom ant${custom.length===1?'':'s'}`:'No custom ants yet';
+    if(!list) return;
+    if(!custom.length){list.innerHTML='<div style="font-size:11px;color:var(--dim);padding:4px 0;">No custom ants. Click "Create New Ant" to add one.</div>';return;}
+    list.innerHTML=custom.map(a=>`
+      <div class="custom-ant-card">
+        <div class="ca-name">${a.name||'?'}${a.auto_spawned?'<span class="ant-spawned-badge">auto-spawned</span>':''}</div>
+        <div style="font-size:10px;color:var(--queen);margin-bottom:4px;">${a.display_name||''}</div>
+        <div class="ca-desc">${(a.description||'').slice(0,120)||'No description.'}</div>
+        ${a.model_route?`<span class="ca-badge">route: ${a.model_route}</span>`:''}
+        <div class="ca-actions">
+          <button class="btn btn-danger" style="font-size:10px;padding:3px 8px;" onclick="deleteCustomAnt('${a.name}')">Delete</button>
+        </div>
+      </div>`).join('');
+    // Populate model selects for new-ant form
+    const sel=document.getElementById('new-ant-model');
+    if(sel&&availableModels.length){
+      sel.innerHTML='<option value="">— default model —</option>'+availableModels.map(m=>`<option value="${m}">${m}</option>`).join('');
+    }
+  }catch(e){if(list) list.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${e.message}</div>`;}
+}
+
+async function deleteCustomAnt(name){
+  if(!confirm(`Delete ant "${name}"? This cannot be undone.`)) return;
+  try{
+    const r=await api(`/ants/${name}`,'DELETE');
+    if(!r.success) throw new Error(r.message);
+    await loadCustomAnts();
+  }catch(e){alert('Error: '+e.message);}
+}
+
+// Create-ant form toggle
+document.getElementById('create-ant-btn').addEventListener('click',()=>{
+  const card=document.getElementById('create-ant-form-card');
+  card.style.display=card.style.display==='none'?'block':'none';
+  if(card.style.display==='block'){
+    fetchModelNames().then(()=>{
+      const sel=document.getElementById('new-ant-model');
+      if(sel) sel.innerHTML='<option value="">— default model —</option>'+availableModels.map(m=>`<option value="${m}">${m}</option>`).join('');
+    });
+    document.getElementById('new-ant-name').focus();
+  }
+});
+
+document.getElementById('create-ant-cancel').addEventListener('click',()=>{
+  document.getElementById('create-ant-form-card').style.display='none';
+});
+
+document.getElementById('create-ant-submit').addEventListener('click',async()=>{
+  const msg=document.getElementById('create-ant-msg');
+  msg.style.color='var(--dim)'; msg.textContent='Saving...';
+  const name=(document.getElementById('new-ant-name').value||'').trim();
+  const display=(document.getElementById('new-ant-display').value||'').trim();
+  const desc=(document.getElementById('new-ant-desc').value||'').trim();
+  const prompt=(document.getElementById('new-ant-prompt').value||'').trim();
+  const model=document.getElementById('new-ant-model').value||'';
+  const toolsRaw=(document.getElementById('new-ant-tools').value||'').trim();
+  const tools=toolsRaw?toolsRaw.split(',').map(t=>t.trim()).filter(Boolean):[];
+  if(!name||!prompt){msg.style.color='var(--red)';msg.textContent='Name and system prompt are required.';return;}
+  try{
+    const r=await api('/ants','POST',{name,display_name:display||name,description:desc,system_prompt:prompt,model_route:model,allowed_tools:tools});
+    if(!r.success) throw new Error(r.message);
+    msg.style.color='var(--green)'; msg.textContent='Ant created!';
+    document.getElementById('new-ant-name').value='';
+    document.getElementById('new-ant-display').value='';
+    document.getElementById('new-ant-desc').value='';
+    document.getElementById('new-ant-prompt').value='';
+    document.getElementById('new-ant-model').value='';
+    document.getElementById('new-ant-tools').value='';
+    document.getElementById('create-ant-form-card').style.display='none';
+    await loadCustomAnts();
+  }catch(e){msg.style.color='var(--red)';msg.textContent='Error: '+e.message;}
+  setTimeout(()=>msg.textContent='',4000);
+});
+
+// ── Pheromone Connections ─────────────────────────────────────────────────────
+
+function refreshConnDropdowns(){
+  ['conn-src','conn-tgt'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel) return;
+    const cur=sel.value;
+    sel.innerHTML=_antSelectOptions(cur);
+  });
+}
+
+async function loadPheroConns(){
+  const el=document.getElementById('conn-list'); if(!el) return;
+  try{
+    const r=await api('/pheromones/connections');
+    if(!r.success) throw new Error(r.message);
+    const conns=r.data||[];
+    if(!conns.length){el.innerHTML='<div style="font-size:10px;color:var(--dim);">No connections yet.</div>';return;}
+    el.innerHTML=`<table class="phero-conn-table"><thead><tr>
+      <th>Source</th><th>→</th><th>Target</th><th>Label</th><th>Strength</th><th></th></tr></thead><tbody>
+      ${conns.map(c=>`<tr>
+        <td style="font-family:var(--mono);color:var(--queen)">${c.source_ant||'?'}</td>
+        <td style="color:var(--dim)">→</td>
+        <td style="font-family:var(--mono);color:var(--queen)">${c.target_ant||'?'}</td>
+        <td style="color:var(--muted)">${c.label||'—'}</td>
+        <td style="color:var(--green)">${(+c.strength||1).toFixed(2)}</td>
+        <td><button class="btn btn-danger" style="font-size:9px;padding:2px 7px;" onclick="deletePheroConn('${c.id}')">✕</button></td>
+      </tr>`).join('')}</tbody></table>`;
+  }catch(e){el.innerHTML=`<div style="color:var(--red);font-size:11px;">Error: ${e.message}</div>`;}
+}
+
+async function deletePheroConn(id){
+  try{
+    const r=await api(`/pheromones/connections/${id}`,'DELETE');
+    if(!r.success) throw new Error(r.message);
+    await loadPheroConns();
+  }catch(e){alert('Error: '+e.message);}
+}
+
+document.getElementById('conn-add').addEventListener('click',async()=>{
+  const msg=document.getElementById('conn-msg');
+  msg.style.color='var(--dim)'; msg.textContent='Saving...';
+  const src=document.getElementById('conn-src').value;
+  const tgt=document.getElementById('conn-tgt').value;
+  const label=document.getElementById('conn-label').value.trim();
+  const strength=parseFloat(document.getElementById('conn-strength').value)||1.0;
+  if(!src||!tgt){msg.style.color='var(--red)';msg.textContent='Select source and target.';return;}
+  try{
+    const r=await api('/pheromones/connections','POST',{source_ant:src,target_ant:tgt,label,strength});
+    if(!r.success) throw new Error(r.message);
+    msg.style.color='var(--green)'; msg.textContent='Connection added!';
+    document.getElementById('conn-label').value='';
+    document.getElementById('conn-strength').value='1.0';
+    await loadPheroConns();
+  }catch(e){msg.style.color='var(--red)';msg.textContent='Error: '+e.message;}
+  setTimeout(()=>msg.textContent='',3000);
+});
+
+// Extend page enter callbacks
+const _origAntcfgEnter=PAGE_ENTER['antconfig'];
+PAGE_ENTER['antconfig']=()=>{_origAntcfgEnter&&_origAntcfgEnter();loadCustomAnts();};
+
+const _origPheroEnter=PAGE_ENTER['pheromones'];
+PAGE_ENTER['pheromones']=()=>{
+  _origPheroEnter&&_origPheroEnter();
+  refreshConnDropdowns();
+  loadPheroConns();
+};
+
 // ── Colony settings tab ───────────────────────────────────────────────────────
 const TOGGLE_KEYS=[
   ['web_search_enabled','Web Search'],['file_tools_enabled','File Tools'],
   ['file_writing_enabled','File Writing'],['patch_application_enabled','Patch Apply'],
   ['shell_tool_enabled','Shell Tool'],['parallel_execution_enabled','Parallel Exec'],
+  ['enable_auto_spawn','Queen Auto-Spawn'],
   ['spec_ingestion_enabled','Spec Ingestion'],['autonomy_enabled','Autonomy'],
 ];
 const NUM_KEYS=[
   ['max_parallel_workers','Parallel Workers'],['max_web_searches_per_mission','Web Searches/Mission'],
   ['max_sources_per_mission','Sources/Mission'],['max_context_packet_chars','Context Chars'],
   ['long_input_threshold','Long-Input Threshold'],['max_section_chars','Section Chars'],
+  ['auto_spawn_task_load_threshold','Auto-Spawn Threshold'],
 ];
 const AUTO_KEYS=[
   ['autonomy_poll_seconds','Poll Seconds'],['autonomy_max_missions_per_hour','Missions/Hour'],
@@ -2397,6 +2775,7 @@ async function loadColonyTab(){
   try{const r=await api('/settings');if(!r.success)return;colonySettings=r.data;}catch{return;}
   document.getElementById('set-ollama-host').value=colonySettings.ollama_host||'';
   document.getElementById('set-ollama-model').value=colonySettings.ollama_model||'';
+  document.getElementById('set-workspace-dir').value=colonySettings.agent_workspace_dir||'';
   document.getElementById('set-toggles').innerHTML=TOGGLE_KEYS.map(([k,label])=>
     `<div class="toggle-row"><span>${label}</span><div class="toggle-sw${colonySettings[k]?' on':''}" data-key="${k}" onclick="this.classList.toggle('on')"></div></div>`).join('');
   document.getElementById('set-nums').innerHTML=NUM_KEYS.map(([k,label])=>
@@ -2410,6 +2789,7 @@ async function saveColonyTab(){
   const payload={
     ollama_host:document.getElementById('set-ollama-host').value.trim(),
     ollama_model:document.getElementById('set-ollama-model').value.trim(),
+    agent_workspace_dir:document.getElementById('set-workspace-dir').value.trim()||undefined,
   };
   document.querySelectorAll('#set-toggles .toggle-sw').forEach(sw=>{payload[sw.dataset.key]=sw.classList.contains('on');});
   document.querySelectorAll('#set-nums input,#set-autonomy input').forEach(i=>{const v=parseInt(i.value,10);if(!isNaN(v))payload[i.dataset.key]=v;});

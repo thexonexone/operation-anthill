@@ -14,8 +14,8 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.2";
-    public const int SchemaVersion = 9;
+    public const string Version = "1.9.0";
+    public const int SchemaVersion = 10;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
 
@@ -46,7 +46,7 @@ public static class AnthillRuntime
     /// <summary>Default permission map. Mirrors API_PERMISSIONS; graph results stay closed.</summary>
     public static readonly Dictionary<string, bool> ApiPermissions = new()
     {
-        ["run_mission"] = true, ["approve"] = true, ["reject"] = true, ["apply_patch"] = false,
+        ["run_mission"] = true, ["approve"] = true, ["reject"] = true, ["apply_patch"] = true,
         ["read_status"] = true, ["read_diagnostics"] = true, ["read_memory"] = true, ["read_events"] = true,
         ["read_tasks"] = true, ["read_messages"] = true, ["read_communication"] = true, ["read_graph"] = true,
         ["read_graph_results"] = false, ["read_selftest"] = true, ["read_config"] = true, ["read_schema"] = true,
@@ -58,6 +58,10 @@ public static class AnthillRuntime
         ["manage_settings"] = true, ["read_ui_state"] = true, ["manage_ui_state"] = true, ["prune_pheromones"] = true,
         // Operator account management (admin-only at the role layer).
         ["manage_users"] = true,
+        // Dynamic ant registry and pheromone connection management.
+        ["manage_ants"] = true, ["manage_pheromone_connections"] = true,
+        // Process restart (admin-triggered, graceful exit so process host restarts the server).
+        ["restart"] = true,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -113,6 +117,8 @@ public static class AnthillRuntime
     public static bool EnableParallelExecution = true;
     public static int MaxParallelWorkers = 3;
     public static bool EnableAutoDependencyWiring = true;
+    public static bool EnableAutoSpawn = false;
+    public static int AutoSpawnTaskLoadThreshold = 4;
     public static bool EnableFtsMemory = true;
     public static bool EnableWebSearch = false;
 
@@ -168,6 +174,7 @@ public static class AnthillRuntime
         "anthill_meta", "schema_migrations", "missions", "tasks", "events", "pheromone_trails",
         "patch_sets", "patch_proposals", "approval_requests", "task_result_summaries",
         "message_metrics", "agent_messages", "source_records", "objectives", "autonomy_runs", "users",
+        "ant_definitions", "pheromone_connections",
     };
 
     // ---- Observability ----------------------------------------------------
@@ -338,6 +345,8 @@ public static class AnthillRuntime
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
         AutonomyMaxConsecutiveFailures = Math.Max(1, config.AutonomyMaxConsecutiveFailures);
+        EnableAutoSpawn = config.EnableAutoSpawn;
+        AutoSpawnTaskLoadThreshold = Math.Max(2, config.AutoSpawnTaskLoadThreshold);
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
 
@@ -367,6 +376,8 @@ public static class AnthillRuntime
         "spec_ingestion_enabled", "long_input_threshold", "max_section_chars", "max_section_tasks",
         "autonomy_enabled", "autonomy_poll_seconds", "autonomy_max_missions_per_hour",
         "autonomy_max_missions_per_day", "autonomy_max_consecutive_failures",
+        "enable_auto_spawn", "auto_spawn_task_load_threshold",
+        "agent_workspace_dir",
     };
 
     public static IReadOnlyCollection<string> EditableSettingKeys => EditableConfigKeys;
@@ -435,6 +446,9 @@ public static class AnthillRuntime
         ["autonomy_max_missions_per_hour"] = AutonomyMaxMissionsPerHour,
         ["autonomy_max_missions_per_day"] = AutonomyMaxMissionsPerDay,
         ["autonomy_max_consecutive_failures"] = AutonomyMaxConsecutiveFailures,
+        ["enable_auto_spawn"] = EnableAutoSpawn,
+        ["auto_spawn_task_load_threshold"] = AutoSpawnTaskLoadThreshold,
+        ["agent_workspace_dir"] = AllowedWorkspaceRoot,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,
         ["editable_keys"] = EditableConfigKeys.ToList(),

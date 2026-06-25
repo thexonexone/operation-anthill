@@ -27,12 +27,14 @@ public sealed partial class Queen : IDisposable
     public SqliteMemory Memory { get; }
     public ModelRouter? Router { get; }
     public ToolRegistry Tools { get; }
-    private readonly Planner _planner;
+    private Planner _planner;
     private readonly PheromoneEngine _pheromones = new();
     private readonly PatchProposalParser _patchParser = new();
     private readonly object _executionLock = new();
     private readonly Dictionary<string, BaseAnt> _ants;
     public string? LastMissionId { get; private set; }
+
+    private static readonly HashSet<string> BuiltInAntNames = new() { "researcher", "web", "file", "coder", "builder", "verifier" };
 
     public Queen(SqliteMemory? memory = null)
     {
@@ -40,7 +42,6 @@ public sealed partial class Queen : IDisposable
         Memory = memory ?? new SqliteMemory();
         Router = AnthillRuntime.EnableModelRouting ? new ModelRouter(Memory) : null;
         Tools = BuildToolRegistry();
-        _planner = new Planner(AnthillRuntime.UseOllama, Router);
         _ants = new Dictionary<string, BaseAnt>
         {
             ["researcher"] = new ResearcherAnt(Memory, Tools, Router),
@@ -50,6 +51,66 @@ public sealed partial class Queen : IDisposable
             ["builder"] = new BuilderAnt(AnthillRuntime.UseOllama, Router),
             ["verifier"] = new VerifierAnt(AnthillRuntime.UseOllama, Router),
         };
+        _planner = new Planner(AnthillRuntime.UseOllama, Router);
+        ReloadCustomAnts();
+    }
+
+    /// <summary>Loads all enabled custom ant definitions from the DB, instantiates them, and rebuilds the planner.</summary>
+    public void ReloadCustomAnts()
+    {
+        var defs = Memory.ListAntDefinitions();
+        foreach (var def in defs.Where(d => d.Enabled && !_ants.ContainsKey(d.Name)))
+            _ants[def.Name] = new DynamicAnt(def, Memory, Tools, Router);
+        _planner = new Planner(AnthillRuntime.UseOllama, Router, defs.Where(d => d.Enabled));
+    }
+
+    /// <summary>
+    /// After a mission completes, checks whether any ant role carried an unusually high task
+    /// load and, if so, persists a new helper ant definition and registers it for future missions.
+    /// Gated by <see cref="AnthillRuntime.EnableAutoSpawn"/>.
+    /// </summary>
+    private void EvaluateAutoSpawn(Mission mission)
+    {
+        if (!AnthillRuntime.EnableAutoSpawn) return;
+        var threshold = AnthillRuntime.AutoSpawnTaskLoadThreshold;
+        var terminalRoles = new HashSet<string> { "verifier", "builder" };
+
+        var overloaded = mission.Tasks
+            .GroupBy(t => t.AssignedAnt)
+            .Where(g => !terminalRoles.Contains(g.Key) && g.Count() >= threshold);
+
+        var spawned = false;
+        foreach (var group in overloaded)
+        {
+            var helperName = $"{group.Key}_helper";
+            if (_ants.ContainsKey(helperName)) continue;
+            if (Memory.GetAntDefinition(helperName) != null) continue;
+
+            var baseDef = Memory.GetAntDefinition(group.Key);
+            var now = AnthillTime.NowUtc().ToIso();
+            var helper = new AntDefinition
+            {
+                Name = helperName,
+                DisplayName = $"{group.Key.Replace("_", " ")} Helper",
+                Description = $"Additional capacity for {group.Key} tasks. Auto-spawned when task load reached {group.Count()} (threshold: {threshold}).",
+                SystemPrompt = baseDef?.SystemPrompt.Length > 0
+                    ? baseDef.SystemPrompt
+                    : $"You are a specialized assistant performing {group.Key} tasks. Complete the assigned task clearly and concisely.",
+                ModelRoute = baseDef?.ModelRoute ?? group.Key,
+                AllowedTools = baseDef?.AllowedTools ?? new(),
+                AutoSpawned = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            Memory.SaveAntDefinition(helper);
+            _ants[helperName] = new DynamicAnt(helper, Memory, Tools, Router);
+            Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "ant_auto_spawned",
+                $"Queen auto-spawned '{helperName}' (task load: {group.Count()} '{group.Key}' tasks, threshold: {threshold}).",
+                metadata: new() { ["base_ant"] = group.Key, ["task_load"] = group.Count(), ["threshold"] = threshold });
+            Console.WriteLine($"[Queen] Auto-spawned helper ant: {helperName}");
+            spawned = true;
+        }
+        if (spawned) _planner = new Planner(AnthillRuntime.UseOllama, Router, Memory.ListAntDefinitions().Where(d => d.Enabled));
     }
 
     private ToolRegistry BuildToolRegistry()
@@ -72,6 +133,7 @@ public sealed partial class Queen : IDisposable
 
     public string RunMission(string goal)
     {
+        ReloadCustomAnts();
         Console.WriteLine($"Queen received mission: {goal}");
         var missionStartedAt = AnthillTime.NowUtc();
         var mission = new Mission { Goal = goal, Status = MissionStatus.Running };
@@ -108,6 +170,11 @@ public sealed partial class Queen : IDisposable
         // non-critical section flags; auto-wiring would only re-derive the same edges.
         if (AnthillRuntime.EnableAutoDependencyWiring && !isSpecIngestion) AutoWireDependencies(mission);
 
+        // Persist task rows now so mid-execution FK references (patch_proposals → tasks) succeed.
+        // The first SaveMission above was called with an empty Tasks list (needed for the events FK);
+        // this second call upserts the planned task rows before any ant runs.
+        Memory.SaveMission(mission);
+
         foreach (var task in mission.Tasks)
             Memory.LogEvent(mission.Id, "task_created", $"Task created for {task.AssignedAnt}: {task.Title}", task.Id, task.AssignedAnt,
                 new() { ["task_type"] = task.TaskType, ["depends_on"] = task.DependsOn, ["parent_task_ids"] = task.ParentTaskIds });
@@ -133,6 +200,7 @@ public sealed partial class Queen : IDisposable
         Memory.SaveMission(mission);
         Memory.LogEvent(mission.Id, "mission_saved", "Mission saved to ANTHILL memory.", metadata: new() { ["db_path"] = Memory.DbPath });
         Console.WriteLine("Mission saved to ANTHILL memory.");
+        EvaluateAutoSpawn(mission);
         return ComposeCliResult(mission);
     }
 
@@ -148,10 +216,13 @@ public sealed partial class Queen : IDisposable
             else if (task.AssignedAnt == "coder") task.DependsOn = new List<string>(researcherFileIds);
             else if (task.AssignedAnt == "builder") task.DependsOn = new List<string>(preBuilderIds);
             else if (task.AssignedAnt == "verifier") task.DependsOn = preBuilderIds.Concat(builderIds).ToList();
+            else if (!BuiltInAntNames.Contains(task.AssignedAnt))
+                task.DependsOn = new List<string>(preBuilderIds); // custom ants depend on prior research/code
 
             if (task.AssignedAnt is "researcher" or "web" or "file") { researcherFileIds.Add(task.Id); preBuilderIds.Add(task.Id); }
             else if (task.AssignedAnt == "coder") preBuilderIds.Add(task.Id);
             else if (task.AssignedAnt == "builder") builderIds.Add(task.Id);
+            else if (!BuiltInAntNames.Contains(task.AssignedAnt)) preBuilderIds.Add(task.Id);
         }
     }
 

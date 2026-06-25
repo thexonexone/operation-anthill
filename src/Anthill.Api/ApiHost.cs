@@ -201,9 +201,19 @@ public static class ApiHost
         app.MapPost("/apply/{id}", (HttpContext ctx, string id) =>
             RequireAuth(ctx, "apply_patch") ?? Results.Text(Queen.ApplyApprovedPatch(id), "text/plain"));
 
+        app.MapPost("/restart", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "restart"); if (auth is not null) return auth;
+            // Respond before exiting so the client receives the 200.
+            var result = ApiJson.Ok(new Dictionary<string, object?> { ["restarting"] = true, ["message"] = "API restarting — reload the page in a few seconds." });
+            _ = System.Threading.Tasks.Task.Run(async () => { await System.Threading.Tasks.Task.Delay(300); Environment.Exit(0); });
+            return result;
+        });
+
         MapAuthEndpoints(app);
         MapAutonomyEndpoints(app);
         MapDashboardEndpoints(app);
+        MapAntEndpoints(app);
     }
 
     // ---- Authentication + operator accounts ----
@@ -518,6 +528,152 @@ public static class ApiHost
         ["created_at"] = o.CreatedAt.ToIso(), ["last_run_at"] = o.LastRunAt.ToIsoOrNull(),
     };
 
+    // ---- Dynamic ant registry + pheromone connections ----
+    private static void MapAntEndpoints(WebApplication app)
+    {
+        // All ants: built-in (fixed) + custom (persisted).
+        app.MapGet("/ants", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_ants"); if (auth is not null) return auth;
+            var builtIn = new List<Dictionary<string, object?>>
+            {
+                AntInfoDict("researcher", "Researcher", "Summarizes local memory, tool context, and mission-relevant internal context."),
+                AntInfoDict("web", "Web Researcher", "Performs read-only external research when the mission requires current or public information."),
+                AntInfoDict("file", "File Inspector", "Inspects workspace files read-only. Use for file/code/repo/folder missions."),
+                AntInfoDict("coder", "Coder", "Proposes structured JSON patches only. Does not execute code."),
+                AntInfoDict("builder", "Builder", "Creates the final response from prior ant outputs."),
+                AntInfoDict("verifier", "Verifier", "Verifies result quality and safety."),
+            };
+            var custom = Queen.Memory.ListAntDefinitions().Select(d => d.ToDict()).ToList();
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["built_in"] = builtIn, ["custom"] = custom,
+                ["auto_spawn_enabled"] = AnthillRuntime.EnableAutoSpawn,
+                ["auto_spawn_threshold"] = AnthillRuntime.AutoSpawnTaskLoadThreshold,
+            });
+        });
+
+        // Create a new custom ant.
+        app.MapPost("/ants", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_ants"); if (auth is not null) return auth;
+            AntDefinitionRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AntDefinitionRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var name = (body?.Name ?? "").Trim().ToLowerInvariant().Replace(" ", "_");
+            if (name.Length < 2 || name.Length > 40)
+                return ApiJson.Error("Ant name must be 2-40 characters.", "bad_request");
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, @"[^a-z0-9_]"))
+                return ApiJson.Error("Ant name may only contain lowercase letters, digits, and underscores.", "bad_request");
+            var builtIns = new HashSet<string> { "researcher", "web", "file", "coder", "builder", "verifier", "planner" };
+            if (builtIns.Contains(name))
+                return ApiJson.Error($"'{name}' is a reserved built-in ant name.", "bad_request");
+            if (Queen.Memory.GetAntDefinition(name) is not null)
+                return ApiJson.Error($"An ant named '{name}' already exists.", "conflict");
+            if (string.IsNullOrWhiteSpace(body?.SystemPrompt))
+                return ApiJson.Error("system_prompt is required.", "bad_request");
+
+            var now = AnthillTime.NowUtc().ToIso();
+            var def = new AntDefinition
+            {
+                Name = name,
+                DisplayName = (body?.DisplayName ?? name).Trim(),
+                Description = (body?.Description ?? "").Trim(),
+                SystemPrompt = body!.SystemPrompt.Trim(),
+                ModelRoute = (body?.ModelRoute ?? "").Trim(),
+                AllowedTools = body?.AllowedTools ?? new(),
+                AutoSpawned = false,
+                Enabled = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            Queen.Memory.SaveAntDefinition(def);
+            Queen.ReloadCustomAnts();
+            Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "ant_created", $"Custom ant '{name}' created.", metadata: new() { ["name"] = name });
+            return ApiJson.Ok(def.ToDict(), $"Custom ant '{name}' created.");
+        });
+
+        // Update a custom ant.
+        app.MapPut("/ants/{name}", async (HttpContext ctx, string name) =>
+        {
+            var auth = RequireAuth(ctx, "manage_ants"); if (auth is not null) return auth;
+            var existing = Queen.Memory.GetAntDefinition(name);
+            if (existing is null) return ApiJson.Error($"No custom ant named '{name}' found.", "not_found");
+            AntDefinitionRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<AntDefinitionRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (!string.IsNullOrWhiteSpace(body?.DisplayName)) existing.DisplayName = body.DisplayName.Trim();
+            if (!string.IsNullOrWhiteSpace(body?.Description)) existing.Description = body.Description.Trim();
+            if (!string.IsNullOrWhiteSpace(body?.SystemPrompt)) existing.SystemPrompt = body.SystemPrompt.Trim();
+            if (body?.ModelRoute is not null) existing.ModelRoute = body.ModelRoute.Trim();
+            if (body?.AllowedTools is not null) existing.AllowedTools = body.AllowedTools;
+            existing.UpdatedAt = AnthillTime.NowUtc().ToIso();
+            Queen.Memory.SaveAntDefinition(existing);
+            Queen.ReloadCustomAnts();
+            return ApiJson.Ok(existing.ToDict(), $"Ant '{name}' updated.");
+        });
+
+        // Delete a custom ant (built-ins are protected).
+        app.MapDelete("/ants/{name}", (HttpContext ctx, string name) =>
+        {
+            var auth = RequireAuth(ctx, "manage_ants"); if (auth is not null) return auth;
+            var existing = Queen.Memory.GetAntDefinition(name);
+            if (existing is null) return ApiJson.Error($"No custom ant named '{name}' found.", "not_found");
+            if (existing.AutoSpawned == false && Queen.Memory.DeleteAntDefinition(name))
+            {
+                Queen.ReloadCustomAnts();
+                Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "ant_deleted", $"Custom ant '{name}' deleted.", metadata: new() { ["name"] = name });
+                return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = name }, $"Ant '{name}' removed.");
+            }
+            if (!Queen.Memory.DeleteAntDefinition(name))
+                return ApiJson.Error($"Could not delete ant '{name}'.", "server_error");
+            Queen.ReloadCustomAnts();
+            return ApiJson.Ok(new Dictionary<string, object?> { ["name"] = name }, $"Ant '{name}' removed.");
+        });
+
+        // Pheromone connections: explicit user-drawn wires between ant roles.
+        app.MapGet("/pheromones/connections", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_pheromone_connections"); if (auth is not null) return auth;
+            return ApiJson.Ok(Queen.Memory.ListPheromoneConnections().Select(c => c.ToDict()).ToList());
+        });
+
+        app.MapPost("/pheromones/connections", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_pheromone_connections"); if (auth is not null) return auth;
+            PheromoneConnectionRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<PheromoneConnectionRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var src = (body?.SourceAnt ?? "").Trim().ToLowerInvariant();
+            var tgt = (body?.TargetAnt ?? "").Trim().ToLowerInvariant();
+            if (src.Length == 0 || tgt.Length == 0)
+                return ApiJson.Error("source_ant and target_ant are required.", "bad_request");
+            var conn = new PheromoneConnection
+            {
+                SourceAnt = src, TargetAnt = tgt,
+                Label = (body?.Label ?? "").Trim(),
+                Strength = Math.Clamp(body?.Strength ?? 1.0, 0.01, 10.0),
+                CreatedAt = AnthillTime.NowUtc().ToIso(),
+            };
+            Queen.Memory.SavePheromoneConnection(conn);
+            return ApiJson.Ok(conn.ToDict(), "Pheromone connection saved.");
+        });
+
+        app.MapDelete("/pheromones/connections/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_pheromone_connections"); if (auth is not null) return auth;
+            if (!Queen.Memory.DeletePheromoneConnection(id))
+                return ApiJson.Error($"No connection found with id: {id}", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = id }, "Connection removed.");
+        });
+    }
+
+    private static Dictionary<string, object?> AntInfoDict(string name, string display, string description) => new()
+    {
+        ["name"] = name, ["display_name"] = display, ["description"] = description,
+        ["built_in"] = true, ["auto_spawned"] = false, ["enabled"] = true,
+    };
+
     private static void ProtectedJson(WebApplication app, string path, string permission, Func<HttpContext, IResult> handler) =>
         app.MapGet(path, (HttpContext ctx) => RequireAuth(ctx, permission) ?? handler(ctx));
 
@@ -610,6 +766,22 @@ public sealed class ObjectivePatch
 {
     public string? Status { get; set; }
     public int? Priority { get; set; }
+}
+public sealed class AntDefinitionRequest
+{
+    public string? Name { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("display_name")] public string? DisplayName { get; set; }
+    public string? Description { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("system_prompt")] public string? SystemPrompt { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("model_route")] public string? ModelRoute { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("allowed_tools")] public List<string>? AllowedTools { get; set; }
+}
+public sealed class PheromoneConnectionRequest
+{
+    [System.Text.Json.Serialization.JsonPropertyName("source_ant")] public string? SourceAnt { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("target_ant")] public string? TargetAnt { get; set; }
+    public string? Label { get; set; }
+    public double? Strength { get; set; }
 }
 
 /// <summary>Standard JSON response envelopes — {success,message,data} / {success,message,error,data}.</summary>

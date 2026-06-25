@@ -217,6 +217,18 @@ public sealed partial class SqliteMemory : IDisposable
         @"CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, role TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_login_at TEXT)",
+        // User-defined and Queen-spawned ant definitions (dynamic ant registry).
+        @"CREATE TABLE IF NOT EXISTS ant_definitions (
+            id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL,
+            description TEXT NOT NULL, system_prompt TEXT NOT NULL, model_route TEXT NOT NULL DEFAULT '',
+            allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+            auto_spawned INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        // Explicit pheromone connections drawn by the user between ant roles.
+        @"CREATE TABLE IF NOT EXISTS pheromone_connections (
+            id TEXT PRIMARY KEY, source_ant TEXT NOT NULL, target_ant TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '', strength REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL)",
         // Helpful indexes for the hot lookups the colony performs constantly.
         "CREATE INDEX IF NOT EXISTS idx_tasks_mission ON tasks(mission_id)",
         "CREATE INDEX IF NOT EXISTS idx_events_mission ON events(mission_id)",
@@ -278,6 +290,7 @@ public sealed partial class SqliteMemory : IDisposable
             (7, "scheduler_task_lifecycle", "Task scheduler lifecycle, retry, failure, skip, and graph metadata columns verified."),
             (8, "autonomy_rails", "Autonomy backlog (objectives) and per-mission audit trail (autonomy_runs) tables verified."),
             (9, "user_accounts", "Operator accounts (users) with password login and roles verified."),
+            (10, "dynamic_ant_registry", "Custom ant definitions and pheromone connection tables verified."),
         };
         foreach (var (id, name, description) in migrations)
         {

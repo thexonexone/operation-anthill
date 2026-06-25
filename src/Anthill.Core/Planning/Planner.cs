@@ -14,15 +14,27 @@ namespace Anthill.Core.Planning;
 /// </summary>
 public sealed class Planner
 {
-    private static readonly HashSet<string> AllowedAnts = new() { "researcher", "web", "file", "coder", "builder", "verifier" };
+    private static readonly HashSet<string> BuiltInAnts = new() { "researcher", "web", "file", "coder", "builder", "verifier" };
 
     private readonly bool _useOllama;
     private readonly ModelRouter? _router;
+    private readonly HashSet<string> _allowedAnts;
+    private readonly List<(string Name, string Description)> _customAntDescriptions;
 
-    public Planner(bool useOllama, ModelRouter? router)
+    public Planner(bool useOllama, ModelRouter? router, IEnumerable<AntDefinition>? customAnts = null)
     {
         _useOllama = useOllama;
         _router = router;
+        _allowedAnts = new HashSet<string>(BuiltInAnts);
+        _customAntDescriptions = new List<(string, string)>();
+        if (customAnts is not null)
+        {
+            foreach (var def in customAnts.Where(d => d.Enabled))
+            {
+                _allowedAnts.Add(def.Name);
+                _customAntDescriptions.Add((def.Name, def.Description));
+            }
+        }
     }
 
     /// <summary>
@@ -42,6 +54,10 @@ public sealed class Planner
 
         if (!_useOllama || _router is null) return FallbackTasks(goal);
 
+        var customAntLines = _customAntDescriptions.Count > 0
+            ? "\n\nCustom ants (also available):\n" + string.Join("\n", _customAntDescriptions.Select(c => $"- {c.Name}: {c.Description}"))
+            : "";
+        var allowedAntNames = string.Join(", ", _allowedAnts);
         var prompt = $@"{AnthillRuntime.PromptInjectionPrefix}
 ANTHILL v{AnthillRuntime.Version} | role: planner | timestamp: {AnthillTime.NowUtc().ToIso()} | mission: {TextUtil.Truncate(goal, 180)}
 You are concise. Do not explain your reasoning unless asked.
@@ -54,7 +70,7 @@ Available ants:
 - file: inspects workspace files read-only. Use only for file/code/repo/folder missions.
 - coder: proposes structured JSON patches only.
 - builder: creates the final response from prior ant outputs.
-- verifier: verifies result quality and safety.
+- verifier: verifies result quality and safety.{customAntLines}
 
 Available tools:
 {toolContext}
@@ -72,7 +88,7 @@ Rules:
 - Return ONLY valid JSON.
 Do not wrap JSON in markdown code fences.
 - Create between {AnthillRuntime.MinDynamicTasks} and {AnthillRuntime.MaxDynamicTasks} tasks.
-- assigned_ant must be one of: researcher, web, file, coder, builder, verifier.
+- assigned_ant must be one of: {allowedAntNames}.
 - Keep each task description under 100 words.
 - Skip the file ant unless file/code/repo/folder/path keywords appear in the goal.
 - Use web only when the mission needs current, public, external, version, docs, price, news, or online information.
@@ -133,7 +149,7 @@ Required JSON:
             var description = (obj["description"]?.GetValue<string>() ?? "").Trim();
             if (description.Length == 0) description = $"Handle part of the mission: {goal}";
             var assignedAnt = (obj["assigned_ant"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
-            if (!AllowedAnts.Contains(assignedAnt)) { dropped++; continue; }
+            if (!_allowedAnts.Contains(assignedAnt)) { dropped++; continue; }
             var taskType = (obj["task_type"]?.GetValue<string>() ?? "").Trim().ToLowerInvariant();
             if (taskType.Length == 0) taskType = TextUtil.InferTaskType(assignedAnt, title, description);
             var dependsOn = (obj["depends_on"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(s => s.Length > 0).ToList() ?? new();

@@ -66,6 +66,10 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_max_missions_per_day")] public int AutonomyMaxMissionsPerDay { get; set; } = 60;
     [JsonPropertyName("autonomy_max_consecutive_failures")] public int AutonomyMaxConsecutiveFailures { get; set; } = 3;
 
+    // ---- Dynamic ant auto-spawn ----
+    [JsonPropertyName("enable_auto_spawn")] public bool EnableAutoSpawn { get; set; } = false;
+    [JsonPropertyName("auto_spawn_task_load_threshold")] public int AutoSpawnTaskLoadThreshold { get; set; } = 4;
+
     /// <summary>
     /// Safety-profile overrides applied before the user's on-disk config is merged on top.
     /// Mirrors <c>_safety_profile_overrides</c> in the Python runtime: every shipped profile
