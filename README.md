@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.27
+**Current version:** v1.8.27.1
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -58,6 +58,7 @@ Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.8.27.1` | Fix: auto-apply couldn't apply patches to existing files — the coder often proposed `add` for a file that already exists, which the apply tool hard-refused (`ADD refused because file already exists`). Now the coder is instructed to use `modify` for existing files, and an `add` to an existing file is applied as a **backed-up full-file overwrite** (`add_overwrite`) — reversible, with verify/rollback and the standalone-branch (never main) review still gating it. |
 | `v1.8.27` | Docs: added **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** as the single canonical roadmap / build order (v1.8.27 → V3.0), and marked the older roadmap docs (`ROADMAP.md`, `UI_ROADMAP.md`, `AUTONOMY.md`) as subsystem history pointing to it. No runtime change. |
 | `v1.8.26.1` | Harden auto-apply git for the systemd sandbox: set the commit identity inline (`git -c user.name/user.email`) so `commit` never fails without host git config, and write ssh `known_hosts` to `/tmp` (writable under `PrivateTmp`) so the push works without `.ssh` in `ReadWritePaths`. |
 | `v1.8.26` | Auto-apply **git integration**: commit verified changes to a standalone branch `<github-username>-anthill` and (optionally) push it via an **SSH deploy key** (referenced by path — never stored). One-way sync only (origin/main → branch); **main is never committed to, pushed, or merged into**. New Security → Auto-Apply fields (username → branch, remote, key path, push toggle). |

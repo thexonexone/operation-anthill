@@ -1,5 +1,20 @@
 # ANTHILL Changelog
 
+## v1.8.27.1 — Coder add-vs-modify: apply patches to existing files
+
+Auto-apply repeatedly stalled with `ADD refused because file already exists`: the coder frequently
+proposed `change_type: add` for a file that already exists, and the apply tool hard-refused. Two-part
+fix so real self-improvement patches land:
+
+- **Coder prompt (`Ants.cs`):** choose `change_type` by whether the target file exists — `modify`
+  (with exact `old_content`) for existing files, `add` only for files that don't exist yet. Never
+  `add` a path that already exists; to edit/append to an existing file, use `modify`.
+- **Apply tool (`ApplyPatchTool`):** an `add` to a file that already exists is no longer refused —
+  it is applied as a **backed-up full-file overwrite** (result `action: add_overwrite`, with the
+  pre-change `backup_path`). It stays inside the safety model: pre-apply backup, auto-apply
+  verify+rollback, and the standalone-branch-never-main review gate all still apply, and the Patch
+  Center shows the diff before any manual apply. New files still take the plain `add` path.
+
 ## v1.8.27 — Roadmap / documentation consolidation (NORTH_STAR)
 
 Phase 1 of the master roadmap: stop roadmap drift by making one canonical direction document.
