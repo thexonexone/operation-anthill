@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml/badge.svg)](https://github.com/thexonexone/operation-anthill/actions/workflows/ci.yml)
 
-**Current version:** v1.8.25.4
+**Current version:** v1.11.0
 **Stack:** .NET 9 with optional C++20 native kernel  
 **Default runtime:** local Ollama  
 **Web UI:** `http://localhost:8713/ui`
@@ -52,12 +52,20 @@ The active codebase is .NET-first. The optional native C++ kernel is used for so
 
 ## Current Version Notes
 
-The repo currently uses the v1.8.x line.
+The repo currently uses the v1.10.x line.
 
 Recent important changes:
 
 | Version | What changed |
 |---|---|
+| `v1.11.0` | **Health checks + notifications** (NORTH_STAR Phase 7): ping/HTTP/TCP/service-URL checks (plus disk/uptime placeholders) run on the shared homelab scheduler against **allowlisted targets only**, under strict timeouts, with per-target failure streaks promoting to **incident candidates** at 3 consecutive failures. Config-gated **Slack/Discord/generic webhook notifications** (off by default; URLs never logged). Health panel on the Homelab page: add/run/delete checks, live summary, test-notify. No auto-remediation anywhere. |
+| `v1.10.0` | **Inventory + service registry** (NORTH_STAR Phase 6) with a new **Homelab page in the console** (hosts, services, ports, dependencies, recent changes, JSON import/export) — plus two operator-facing fixes: **Patch Center "Apply" no longer 403s** (the `apply_patch` capability gate now follows `patch_application_enabled`; error toasts surface the server's reason), and homelab gates are editable from Settings. |
+| `v1.9.1` | **Homelab scheduler + mock-provider harness** (NORTH_STAR Phase 5): five deterministic, network-free fake providers (Proxmox/DNS/DHCP/firewall/health) run through the shared `HomelabScheduler` pattern — jittered intervals, failure backoff, global concurrency cap, persisted job state, target-allowlist discipline — plus a reusable test harness every real provider (v1.10+) must pass, `GET /homelab/providers` statuses, and a `homelab_mock_providers_enabled` gate (off by default). Still zero real network calls. |
+| `v1.9.0` | **Homelab foundation** (NORTH_STAR Phase 4): read-only backend groundwork for the V2 Homelab Command Center — `HomelabRepository` (15 new SQLite tables), provider interfaces, operator-managed **target allowlist** (isolated from the general SSRF guard), **write-only credential store** with audit events, new `homelab_operator` role + homelab permissions (action gates OFF until V2.1), disabled-by-default `HomelabScheduler` skeleton, 8 visible-only homelab ants, permission-scoped `/homelab/*` endpoints, [docs/HOMELAB.md](docs/HOMELAB.md), and the `Anthill.Tests.Homelab` suite. No infrastructure control of any kind. |
+| `v1.8.29.1` | Auto-apply end-to-end on a fresh LXC install: (1) coder **add-vs-modify** — an `add` for a file that already exists is applied as a backed-up overwrite (`add_overwrite`) instead of hard-refusing, and the coder prompt now picks `add`/`modify` by existence; (2) **default paths** — enabling auto-apply seeds an editable `docs/**` + `src/**` allowlist so it's never a silent no-op; (3) **LXC provisioning** in `setup.sh` — git-checkout workspace, service-user git identity + `safe.directory`, standalone-branch checkout, and a private deploy-key slot, all idempotent. |
+| `v1.8.27` | Docs: added **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** as the single canonical roadmap / build order (v1.8.27 → V3.0), and marked the older roadmap docs (`ROADMAP.md`, `UI_ROADMAP.md`, `AUTONOMY.md`) as subsystem history pointing to it. No runtime change. |
+| `v1.8.26.1` | Harden auto-apply git for the systemd sandbox: set the commit identity inline (`git -c user.name/user.email`) so `commit` never fails without host git config, and write ssh `known_hosts` to `/tmp` (writable under `PrivateTmp`) so the push works without `.ssh` in `ReadWritePaths`. |
+| `v1.8.26` | Auto-apply **git integration**: commit verified changes to a standalone branch `<github-username>-anthill` and (optionally) push it via an **SSH deploy key** (referenced by path — never stored). One-way sync only (origin/main → branch); **main is never committed to, pushed, or merged into**. New Security → Auto-Apply fields (username → branch, remote, key path, push toggle). |
 | `v1.8.25.4` | Fix: the **Autonomous Auto-Apply** toggles ("Enable auto-apply" and "Git-commit verified changes") never saved — `saveSecurity()` collected toggle state only from other containers, so these two flipped visually but were dropped from the payload. Both now persist. |
 | `v1.8.25.3` | Fix: approved patches were un-appliable — `ApproveRequest` flipped only the approval record, never the patch, so the Patch Center's Apply button (gated on patch status `approved`) never appeared. Approving now flips the patch to `approved`, and the UI also honors `approval_status`. |
 | `v1.8.25.2` | CI: new `ui-integrity` job fails the build on any UI glyph corruption (`�`, bare `>?<` icons, `>? Label` buttons, `'?':'?'` carets) + a `node --check` of the embedded JS — so the recurring corruption can never merge again. CI-only. |
@@ -81,7 +89,7 @@ Recent important changes:
 | `v1.8.15` | Gated auto-apply path with verification and rollback controls. |
 | `v1.8.12` | ResourceGovernor and concurrent mission handling. |
 
-For the full history, read `CHANGELOG.md`.
+For the full history, read `CHANGELOG.md`. For the ordered roadmap and long-term direction (through the V2 Homelab Command Center and V3 autonomous operator), see **[docs/NORTH_STAR.md](docs/NORTH_STAR.md)** — the canonical build order.
 
 ---
 

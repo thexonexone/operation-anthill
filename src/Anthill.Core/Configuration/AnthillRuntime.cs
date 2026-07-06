@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.8.25.4";
+    public const string Version = "1.11.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -67,6 +67,10 @@ public static class AnthillRuntime
         // Operator shell console: admin-only interactive host terminal. Gated a second time by
         // operator_shell_enabled at runtime; never granted to coordinators (see UserRoles).
         ["operator_shell"] = true,
+        // Homelab (v1.9.0, NORTH_STAR D3). Reads + integration management ship enabled; the two
+        // action permissions stay OFF until V2.1 ships approval-gated actions — fail closed.
+        ["read_homelab"] = true, ["manage_homelab_integrations"] = true,
+        ["approve_homelab_actions"] = false, ["execute_homelab_actions"] = false,
     };
 
     // ---- SSRF / rate-limit constants -------------------------------------
@@ -119,6 +123,28 @@ public static class AnthillRuntime
     public static int AutonomyMaxConsecutiveFailures = 3;
     /// <summary>Sentinel file whose presence halts the autonomous Director. Lives under the workspace root.</summary>
     public static string AutonomyStopFileName = "STOP";
+
+    // ---- Homelab foundation (v1.9.0, NORTH_STAR Phase 4) -------------------
+    /// <summary>Master gate for the homelab subsystem. Off by default; read-only in the V1.9.x line.</summary>
+    public static bool EnableHomelab = false;
+    /// <summary>Gate for the HomelabScheduler background runner. Off by default; v1.9.0 registers no jobs.</summary>
+    public static bool EnableHomelabScheduler = false;
+    /// <summary>v1.9.1: gate for the network-free mock providers. Both this AND the scheduler gate must be on for mocks to run.</summary>
+    public static bool EnableHomelabMockProviders = false;
+    /// <summary>Global cap on concurrent homelab checks/syncs (the scheduler's semaphore width).</summary>
+    public static int HomelabMaxConcurrentChecks = 2;
+    /// <summary>Sentinel file whose presence halts all homelab actions. Lives under the workspace root.</summary>
+    public static string HomelabStopFileName = "HOMELAB_STOP";
+    // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) -------
+    /// <summary>Cadence of the scheduler's health-check job.</summary>
+    public static int HomelabHealthIntervalSeconds = 60;
+    /// <summary>Global per-check timeout so a hung host can never hang the app.</summary>
+    public static int HomelabHealthTimeoutMs = 5000;
+    /// <summary>Master gate for webhook notifications. Off by default.</summary>
+    public static bool EnableHomelabNotifications = false;
+    public static string HomelabSlackWebhook = "";
+    public static string HomelabDiscordWebhook = "";
+    public static string HomelabGenericWebhook = "";
     // ---- Phase 2: Strategist (self-generated missions) --------------------
     /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
@@ -153,14 +179,32 @@ public static class AnthillRuntime
     public static bool AutonomyAutoApplyEnabled = false;
     /// <summary>Workspace-relative globs a patch file_path must match to be auto-appliable. Empty = nothing eligible.</summary>
     public static List<string> AutonomyAutoApplyPaths = new();
+    /// <summary>
+    /// v1.8.29.1: sensible starter allowlist injected the first time auto-apply is enabled with no
+    /// paths set — so the operator does not silently enable a no-op (empty allowlist = nothing
+    /// eligible). Pre-filled and fully editable/removable from Settings → Security; only applied when
+    /// the list is empty, never overriding an operator's own entries.
+    /// </summary>
+    public static readonly string[] AutonomyAutoApplyDefaultPaths = { "docs/**", "src/**" };
     /// <summary>Max changed lines a single patch may have to auto-apply.</summary>
     public static int AutonomyAutoApplyMaxLines = 40;
     /// <summary>Verify command run after apply; empty = built-in dotnet build + test.</summary>
     public static string AutonomyAutoApplyVerifyCmd = "";
     /// <summary>Hard timeout (seconds) for the verify step.</summary>
     public static int AutonomyAutoApplyVerifyTimeout = 900;
-    /// <summary>After a green verify, also git add + commit locally (never pushed).</summary>
+    /// <summary>After a green verify, also git add + commit on the standalone branch (never main).</summary>
     public static bool AutonomyAutoApplyGitCommit = false;
+    /// <summary>v1.8.26: after commit, push the standalone branch to the remote via the SSH deploy key.</summary>
+    public static bool AutonomyAutoApplyGitPush = false;
+    /// <summary>v1.8.26: git remote name for pull/push (default "origin").</summary>
+    public static string AutonomyAutoApplyGitRemote = "origin";
+    /// <summary>v1.8.26: GitHub username — the standalone branch is "&lt;username&gt;-anthill".</summary>
+    public static string AutonomyAutoApplyGitUsername = "";
+    /// <summary>v1.8.26: PATH to the SSH deploy key on the host (never the key material itself).</summary>
+    public static string AutonomyAutoApplyGitSshKeyPath = "";
+    /// <summary>The standalone branch name derived from the configured username, or "" when unset.</summary>
+    public static string AutonomyAutoApplyGitBranch =>
+        string.IsNullOrWhiteSpace(AutonomyAutoApplyGitUsername) ? "" : $"{AutonomyAutoApplyGitUsername}-anthill";
     /// <summary>v1.8.21: keep auto-applied patches without a verify gate when no verify command is set (opt-in; default off = verify).</summary>
     public static bool AutonomyAutoApplyKeepWithoutVerify = false;
 
@@ -391,6 +435,11 @@ public static class AnthillRuntime
         OllamaHost = Environment.GetEnvironmentVariable("ANTHILL_OLLAMA_HOST") ?? config.OllamaHost;
         EnableWebSearch = config.WebSearchEnabled;
         EnablePatchApplication = config.PatchApplicationEnabled;
+        // v1.10.0 fix: the API capability gate for POST /apply/{id} must follow the operator's
+        // patch_application_enabled setting. It shipped as a static false and was never projected,
+        // so Patch Center "Apply" always returned 403 permission_denied ("apply_patch is disabled")
+        // even after the operator enabled patch application in Settings → Security.
+        ApiPermissions["apply_patch"] = EnablePatchApplication;
         EnableFileWriting = config.FileWritingEnabled;
         EnableShellTool = config.ShellToolEnabled;
         EnableOperatorShell = config.OperatorShellEnabled;
@@ -409,6 +458,16 @@ public static class AnthillRuntime
         MaxDbBackups = Math.Clamp(config.MaxDbBackups, 0, 1000);
         EventRetentionDays = Math.Clamp(config.EventRetentionDays, 0, 3650);
         EnableAutonomy = config.AutonomyEnabled;
+        EnableHomelab = config.HomelabEnabled;
+        EnableHomelabScheduler = config.HomelabSchedulerEnabled;
+        EnableHomelabMockProviders = config.HomelabMockProvidersEnabled;
+        HomelabMaxConcurrentChecks = Math.Clamp(config.HomelabMaxConcurrentChecks, 1, 16);
+        HomelabHealthIntervalSeconds = Math.Clamp(config.HomelabHealthIntervalSeconds, 10, 86400);
+        HomelabHealthTimeoutMs = Math.Clamp(config.HomelabHealthTimeoutMs, 250, 60000);
+        EnableHomelabNotifications = config.HomelabNotificationsEnabled;
+        HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
+        HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
+        HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
@@ -429,10 +488,24 @@ public static class AnthillRuntime
         AutonomyAutoApplyEnabled = config.AutonomyAutoApplyEnabled;
         AutonomyAutoApplyPaths = (config.AutonomyAutoApplyPaths ?? new())
             .Select(p => (p ?? "").Trim()).Where(p => p.Length > 0).ToList();
+        // v1.8.29.1: when auto-apply is turned on but the operator has not set any path globs, seed the
+        // starter allowlist (docs/**, src/**) so enabling the feature is not a silent no-op. These are
+        // written back into the persisted config below, so they show up pre-filled in the UI and can be
+        // edited or removed like any operator entry. Never seeded while auto-apply is off, and never
+        // overrides paths the operator already set.
+        if (AutonomyAutoApplyEnabled && AutonomyAutoApplyPaths.Count == 0)
+        {
+            AutonomyAutoApplyPaths = AutonomyAutoApplyDefaultPaths.ToList();
+            config.AutonomyAutoApplyPaths = AutonomyAutoApplyPaths.ToList();
+        }
         AutonomyAutoApplyMaxLines = Math.Clamp(config.AutonomyAutoApplyMaxLines, 1, 100000);
         AutonomyAutoApplyVerifyCmd = (config.AutonomyAutoApplyVerifyCmd ?? "").Trim();
         AutonomyAutoApplyVerifyTimeout = Math.Clamp(config.AutonomyAutoApplyVerifyTimeout, 30, 7200);
         AutonomyAutoApplyGitCommit = config.AutonomyAutoApplyGitCommit;
+        AutonomyAutoApplyGitPush = config.AutonomyAutoApplyGitPush;
+        AutonomyAutoApplyGitRemote = string.IsNullOrWhiteSpace(config.AutonomyAutoApplyGitRemote) ? "origin" : config.AutonomyAutoApplyGitRemote.Trim();
+        AutonomyAutoApplyGitUsername = (config.AutonomyAutoApplyGitUsername ?? "").Trim();
+        AutonomyAutoApplyGitSshKeyPath = (config.AutonomyAutoApplyGitSshKeyPath ?? "").Trim();
         AutonomyAutoApplyKeepWithoutVerify = config.AutonomyAutoApplyKeepWithoutVerify;
         AllowedWorkspaceRoot = config.AgentWorkspaceDir;
         BackupDir = config.BackupDir;
@@ -470,8 +543,15 @@ public static class AnthillRuntime
         "autonomy_retire_min_runs", "autonomy_retire_score_threshold", "autonomy_loop_window",
         "autonomy_oneshot_completion",
         "operator_shell_enabled", "operator_shell_dir",
+        "homelab_enabled", "homelab_scheduler_enabled", "homelab_mock_providers_enabled",
+        "homelab_max_concurrent_checks",
+        "homelab_health_interval_seconds", "homelab_health_timeout_ms",
+        "homelab_notifications_enabled", "homelab_slack_webhook", "homelab_discord_webhook",
+        "homelab_generic_webhook",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
+        "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
+        "autonomy_autoapply_git_ssh_key_path",
         "autonomy_autoapply_keep_without_verify",
     };
 
@@ -551,6 +631,16 @@ public static class AnthillRuntime
         ["model_routes"] = ModelRouting.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value)),
         ["web_search_enabled"] = EnableWebSearch,
         ["patch_application_enabled"] = EnablePatchApplication,
+        ["homelab_enabled"] = EnableHomelab,
+        ["homelab_scheduler_enabled"] = EnableHomelabScheduler,
+        ["homelab_mock_providers_enabled"] = EnableHomelabMockProviders,
+        ["homelab_max_concurrent_checks"] = HomelabMaxConcurrentChecks,
+        ["homelab_health_interval_seconds"] = HomelabHealthIntervalSeconds,
+        ["homelab_health_timeout_ms"] = HomelabHealthTimeoutMs,
+        ["homelab_notifications_enabled"] = EnableHomelabNotifications,
+        ["homelab_slack_webhook"] = HomelabSlackWebhook,
+        ["homelab_discord_webhook"] = HomelabDiscordWebhook,
+        ["homelab_generic_webhook"] = HomelabGenericWebhook,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
         ["operator_shell_enabled"] = EnableOperatorShell,
@@ -592,6 +682,11 @@ public static class AnthillRuntime
         ["autonomy_autoapply_verify_cmd"] = AutonomyAutoApplyVerifyCmd,
         ["autonomy_autoapply_verify_timeout"] = AutonomyAutoApplyVerifyTimeout,
         ["autonomy_autoapply_git_commit"] = AutonomyAutoApplyGitCommit,
+        ["autonomy_autoapply_git_push"] = AutonomyAutoApplyGitPush,
+        ["autonomy_autoapply_git_remote"] = AutonomyAutoApplyGitRemote,
+        ["autonomy_autoapply_git_username"] = AutonomyAutoApplyGitUsername,
+        ["autonomy_autoapply_git_ssh_key_path"] = AutonomyAutoApplyGitSshKeyPath,
+        ["autonomy_autoapply_git_branch"] = AutonomyAutoApplyGitBranch,
         ["autonomy_autoapply_keep_without_verify"] = AutonomyAutoApplyKeepWithoutVerify,
         ["api_host"] = ApiHost,
         ["api_port"] = ApiPort,

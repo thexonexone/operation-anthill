@@ -1,5 +1,284 @@
 # ANTHILL Changelog
 
+## v1.11.0 — Health checks + notifications (NORTH_STAR Phase 7)
+
+Phase 7 of the master roadmap: ANTHILL can tell what is alive, degraded, or broken. Awareness and
+reporting only — there is no auto-remediation anywhere in this subsystem.
+
+- **`HealthCheckRunner`** (deterministic C#, never routed through the model router): ping, HTTP
+  status (200s healthy / 4xx degraded / 5xx failed), TCP port, service-URL checks, plus disk and
+  uptime placeholders that report `unknown` until agent support lands. Every check must pass the
+  Homelab Target Allowlist (D1) **before any I/O**, runs under a strict per-check timeout
+  (`homelab_health_timeout_ms`, per-schedule override) so a hung host can never hang the app, and
+  persists a `HealthCheckResult` with latency + detail.
+- **Failure alerting**: each failed check writes a `health_check_failed` event; 3 consecutive
+  failures of one target promote it to a single **`incident_candidate`** event (fires once per
+  streak) — groundwork for V1.14's incident memory.
+- **`NotificationService`** (config-gated, OFF by default): Slack, Discord, and generic JSON
+  webhooks; fires on health-check failures, incident candidates, and operator tests. Strict
+  timeouts, soft failure, and every send attempt audited as a homelab event that never contains a
+  webhook URL or any secret.
+- **Scheduler wiring**: one `health-checks` job on the shared `HomelabScheduler`
+  (`homelab_health_interval_seconds`, default 60s) — no per-subsystem timers. Mock providers now
+  register only when their own gate is on; the scheduler starts whenever it has jobs.
+- **Operator-managed schedules**: new `health_check_schedules` table with CRUD + ChangeRecords.
+- **API**: `GET /homelab/health/summary` (latest-per-target rollup), `GET /homelab/health/results`,
+  `GET|POST|DELETE /homelab/health/schedules`, `POST /homelab/health/run` (run everything now),
+  `POST /homelab/notifications/test`. Reads = `read_homelab`, writes = `manage_homelab_integrations`.
+- **UI**: Health panel on the Homelab page — add/run/delete checks, healthy/degraded/failed/unknown
+  KPI line, last status/latency/detail per check, and a Test Notify button.
+- **Config**: `homelab_health_interval_seconds`, `homelab_health_timeout_ms`,
+  `homelab_notifications_enabled`, `homelab_slack_webhook`, `homelab_discord_webhook`,
+  `homelab_generic_webhook` — all operator-editable, all conservative/off by default.
+- **Tests** (`HealthAndNotificationTests`, all on loopback sockets — zero external network):
+  host extraction, allowlist-blocks-before-I/O, HTTP 200/404/500 classification, TCP open/closed/
+  malformed, hung-server timeout bound, placeholder kinds, incident-candidate streak, notifications
+  disabled-by-default / delivery + URL-free audit / unreachable-webhook soft-fail, latest-per-target
+  summary, and schedule CRUD persistence across reopen.
+
+## v1.10.0 — Inventory + service registry with Homelab console page (NORTH_STAR Phase 6)
+
+Phase 6 of the master roadmap: ANTHILL knows what exists. Manual/import-based only — no active
+scanning. Plus two operator-facing fixes found in live testing.
+
+### Inventory + service registry
+- **Dependency mapping**: `dependencies` CRUD in `HomelabRepository` with ChangeRecords, answering
+  "what runs where?" and "what depends on this?" (service→host `runs_on`, `needs`, `stores_on`).
+- **Import/export**: `GET /homelab/export` / `POST /homelab/import` round-trip nodes + services +
+  dependencies as one JSON bundle. Import is upsert-by-id, so re-importing an export is idempotent;
+  invalid records are skipped; credentials and allowlist entries are never part of the bundle.
+- **API completion** (per NORTH_STAR): `PUT /homelab/hosts/{id}`, `PUT /homelab/services/{id}`,
+  `GET|POST|DELETE /homelab/dependencies`. Reads = `read_homelab`; writes = `manage_homelab_integrations`.
+- **New console page: Homelab Inventory** (visible to admins and homelab operators; write forms
+  admin-only): Subsystem Status, Hosts, Services, Open Ports (derived from services), Dependencies,
+  Recent Changes panels, host/service/dependency registration forms, and JSON export/import buttons.
+- Homelab gates (`homelab_enabled`, `homelab_scheduler_enabled`, `homelab_mock_providers_enabled`,
+  `homelab_max_concurrent_checks`) are now operator-editable settings and appear in the settings
+  snapshot — no more hand-editing config.json.
+
+### Fixes
+- **LXC deployments silently froze on old versions (the "header says v1.8.26" bug).** The
+  `setup.sh` upgrade path ran `git pull --ff-only` on whatever branch the build checkout was on;
+  since the auto-apply git integration (v1.8.26) that checkout can end up parked on the standalone
+  `<username>-anthill` branch, so every upgrade re-run rebuilt stale code while releases moved on.
+  The upgrade path now forces the build checkout to `origin/main`
+  (`git fetch` + `git checkout -B main origin/main`), logs exactly which version+commit it is
+  building, and after the service restarts it polls `/health` and **fails loudly on a
+  built-vs-running version mismatch** — a stale deployment can never look healthy again. (The UI
+  header renders the `/health` version since v1.9.1.1, so header == running binary, always.)
+- **Patch Center "Apply" always returned 403.** The API capability gate `apply_patch` shipped as a
+  static `false` and was never projected from `patch_application_enabled`, so `POST /apply/{id}`
+  answered `permission_denied` even after the operator enabled patch application in Settings. The
+  gate now follows the setting at boot and on live settings updates (`PatchApplyGateTests`), and the
+  Patch Center error toast now surfaces the server's actual reason plus the fix
+  ("enable Patch application in Settings") instead of a bare HTTP code.
+- The `homelab_operator` role now renders correctly in the nav footer and sees the Homelab page.
+
+### Tests
+- `PatchApplyGateTests` (gate follows setting, homelab keys editable/snapshotted),
+  `InventoryRegistryTests` (dependency CRUD + change records, export/import round-trip into an
+  empty DB, idempotent re-import, invalid-record skipping, exports never contain credential or
+  allowlist material).
+
+## v1.9.1.1 — Fix: UI header/title version drift (hardcoded markup)
+
+The console title, login logo, and nav header displayed a hardcoded version (`v1.8.29.1`) that had
+silently drifted from the runtime version — release bumps only covered the four canonical markers
+(runtime const, Directory.Build.props, README, CHANGELOG), not markup literals.
+
+- The UI now fetches the version from the public `/health` endpoint at boot (`bootVersion()`) and
+  renders it into the title, login logo, and nav header — `AnthillRuntime.Version` is the single
+  source of truth; the markup carries no literal version anywhere.
+- New regression guard (`UiIntegrity_NoHardcodedVersionInMarkup`): fails `dotnet test`/CI if any
+  `>vX.Y.Z<` literal or versioned `<title>` ever reappears in `index.html`.
+
+## v1.9.1 — Homelab scheduler + mock-provider harness (NORTH_STAR Phase 5)
+
+Phase 5 of the master roadmap: one shared execution/testing pattern for every future homelab
+provider. Still read-only, still zero real network calls, still disabled by default.
+
+- **Five mock providers** (`FakeProxmoxProvider`, `FakeDnsProvider`, `FakeDhcpProvider`,
+  `FakeFirewallProvider`, `FakeHealthProvider`) built on a shared `FakeHomelabProvider` base:
+  deterministic item counts, simulated latency, scriptable failure injection, thread-safe
+  secret-free `HomelabProviderStatus`, and an audit `provider_run` event per run.
+- **Target-allowlist discipline baked into the base class**: a provider with a target host
+  consults `IHomelabTargetGuard` before doing anything and fails cleanly when the host is not
+  allowlisted — the exact D1 wiring real providers inherit.
+- **Scheduler wiring**: the five mocks register as `HomelabScheduler` jobs at boot but only run
+  when BOTH `homelab_scheduler_enabled` AND the new `homelab_mock_providers_enabled` gate are true
+  (both default false). Jitter, per-failure exponential backoff, the global concurrency cap, and
+  restart-surviving job state all exercised end-to-end.
+- **API**: new `GET /homelab/providers` (secret-free statuses, `read_homelab`); `/homelab/summary`
+  now includes the provider list.
+- **Shared mock-provider test harness** (`MockProviderHarnessTests`): one `[MemberData]` fixture
+  runs every provider through identical assertions — success/status consistency, failure streak +
+  recovery, allowlist gating, disabled-provider behavior — plus scheduler proofs for the Phase 5
+  validation list: run-all, backoff growth/reset, concurrency cap (no stampede), background
+  start/stop, and job-state persistence. Real providers from v1.10+ join by adding a factory line.
+
+## v1.9.0 — Homelab foundation (NORTH_STAR Phase 4)
+
+Phase 4 of the master roadmap and the start of the V1.9.x homelab line: the read-only backend
+foundation. Nothing in this release can control infrastructure — no Proxmox control, no firewall
+changes, no SSH execution, no destructive actions. Everything ships disabled by default.
+
+- **Models + persistence.** 16 homelab record types and 15 new SQLite tables (`homelab_nodes`,
+  `network_devices`, `services`, `vm_inventory`, `container_inventory`, `storage_inventory`,
+  `backup_inventory`, `health_checks`, `homelab_events`, `change_log`, `incidents`, `dependencies`,
+  `risk_records`, `homelab_credentials`, `homelab_target_allowlist`) in the existing colony DB via
+  the new `HomelabRepository` (idempotent schema init; every inventory write logs a `ChangeRecord`).
+- **Interfaces** for all future integrations: `IInventoryProvider`, `IHealthCheckProvider`,
+  `IHomelabEventSink`, `IHomelabRepository`, `IIntegrationStatusProvider`, `IHomelabTargetGuard`,
+  `ICredentialProvider`.
+- **Homelab Target Allowlist (D1).** `HomelabTargetGuard`: deterministic providers may only reach
+  operator-allowlisted targets (exact hostname / exact IP / IPv4 CIDR, no DNS resolution). Fully
+  isolated from the general SSRF guard — `UrlSafety` still blocks private/loopback for LLM-directed
+  tools, proven by tests in both directions.
+- **Credential store (D2).** `HomelabCredentialStore` on the existing `FieldCipher`: secrets are
+  write-only via the API, statuses expose only configured/last_verified, and every secret use
+  writes an audit `homelab_events` row.
+- **Homelab permission tier (D3).** New permissions `read_homelab`, `manage_homelab_integrations`,
+  `approve_homelab_actions`, `execute_homelab_actions` (the two action gates ship capability-OFF
+  until V2.1) and a new `homelab_operator` role: view + approve, never manage/execute/admin.
+- **Scheduler skeleton (D4).** `HomelabScheduler`: jittered intervals (no check stampede),
+  exponential backoff on consecutive failures, global concurrency cap, last-run/last-result
+  persisted (survives restart). Disabled by default; registers no jobs in v1.9.0.
+- **Read-only homelab ants** (visible-only, never executable, never patch-capable): InventoryAnt,
+  NetworkScoutAnt, HealthAnt, ProxmoxAnt, StorageAnt, BackupAnt, SecurityScoutAnt,
+  ChangeArchivistAnt.
+- **API** (permission-scoped, secrets never returned): `GET /homelab/summary`, `GET|POST
+  /homelab/hosts`, `GET|POST /homelab/services`, `GET /homelab/events`, `GET /homelab/changes`,
+  `GET|POST|DELETE /homelab/allowlist`, `GET|POST|DELETE /homelab/credentials`.
+- **Config**: `homelab_enabled`, `homelab_scheduler_enabled`, `homelab_max_concurrent_checks`
+  (all off/conservative by default) + config.example.json documentation.
+- **Docs**: new `docs/HOMELAB.md` (canonical homelab design doc, D10) with phase status at top;
+  reserved backend folders carry phase-pointer READMEs.
+- **Tests**: new `tests/Anthill.Tests.Homelab` project — migration idempotence (fresh/existing/
+  re-run + coexistence with colony memory), allowlist matching + SSRF isolation, credential
+  save/use/verify/remove with audit and redaction, scheduler run/backoff/persistence, ant-registry
+  shape, and the D3 permission matrix.
+
+## v1.8.29.1 — Auto-apply: coder add-vs-modify, default paths, and LXC provisioning
+
+Makes the autonomous auto-apply → git loop work end-to-end on a fresh LXC install, removing the
+manual steps and the last blockers hit during live testing.
+
+- **Coder add-vs-modify** (`Ants.cs` + `Tools.cs`): the loop stalled whenever the coder proposed
+  `change_type: add` for a file that already exists (a common LLM slip) — `ApplyPatchTool`
+  hard-refused, so the patch never applied. The coder prompt now chooses `add`/`modify` by whether
+  the target already exists, and an `add` to an existing path is applied as a backed-up full-file
+  overwrite (`add_overwrite`) instead of failing. Fully reversible: the pre-apply backup, verify +
+  rollback, and standalone-branch-never-main gate all still apply.
+- **Default auto-apply paths** (`AnthillRuntime.cs` + UI): enabling auto-apply with an empty path
+  allowlist was a silent no-op (empty allowlist = nothing eligible). Turning it on now seeds a
+  starter allowlist of `docs/**` and `src/**`, persisted to config so it shows up pre-filled in
+  Settings → Security and can be edited or removed like any operator entry. Never overrides paths
+  the operator already set; never seeded while auto-apply is off. The UI also pre-fills the box the
+  moment the toggle is switched on.
+- **LXC provisioning** (`deploy/lxc/setup.sh` + service template): setup.sh now provisions the
+  agent workspace as a git checkout under `.anthill/workspace` (already writable via the unit's
+  `ReadWritePaths=.anthill`), sets the service user's git identity + `safe.directory`, checks out
+  the standalone `<username>-anthill` branch on re-runs where a username is configured, and creates
+  a private `.ssh` deploy-key slot (700; the key is provided by the operator and referenced by path,
+  never generated or stored). Idempotent, so it doubles as the upgrade path. End users no longer do
+  any of this by hand.
+
+## v1.8.29 — Fresh-install training + pheromone bootstrap missions (NORTH_STAR Phase 3)
+
+Phase 3 of the master roadmap: give fresh installs a repeatable, read-only way to learn the repo,
+roles, workflow, UI, memory system, and V2 roadmap before doing real patch missions. Docs only —
+no runtime behavior change.
+
+- New **`docs/TRAINING_MISSIONS.md`** — a nine-mission training pack (Repo Orientation, Ant Role
+  Training, Build/Test Workflow, UI Structure, Memory + Pheromone System, Patch Proposal
+  Discipline, Failure Drill, V2 Homelab Roadmap, Daily Memory Compression) with copy-paste goal
+  text for each.
+- Every goal embeds the exact `MissionConstraints` phrases (`read-only`, `do not modify files`,
+  `one-shot`) so the v1.8.16 constraint enforcement strips coder patch tasks at planning time —
+  training can never produce patch proposals.
+- Operator instructions: run order, Preview Plan verification, memory/pheromone checks afterward,
+  and when to re-run the pack (fresh install, major version jump, after Clear Missions).
+- Documents the recurring **memory-compression pattern**: mission 9 doubles as a daily/periodic
+  compression template, runnable manually or as a low-priority recurring objective.
+
+## v1.8.28 — Validation / regression harness hardening (NORTH_STAR Phase 2)
+
+Phase 2 of the master roadmap: lock in regression protection for every bug class that has already
+shipped once, before homelab complexity lands. Validation/CI/test changes only — no product
+behavior change.
+
+- **Centralized validation commands**: new `scripts/validate.sh` and `scripts/validate.ps1` run the
+  full required validation set (restore → Release build → Release test, `--full`/`-Full` adds
+  self-contained publish + `--selftest`, plus `node --check` on the embedded UI JS when node is
+  available). CI runs the same steps.
+- **New `RegressionGuardTests`** (run in plain `dotnet test`, so local work and CI gate identically):
+  - *Version-marker consistency*: `AnthillRuntime.Version` must match `Directory.Build.props`
+    `<AnthillVersion>`, the README "Current version" line, and a matching `## vX.Y.Z` CHANGELOG
+    entry. (Directory.Build.props had silently drifted to 1.8.15.6 since v1.8.15.6 — fixed.)
+  - *Migration idempotence*: fresh DB, reopen of an existing DB, and repeated re-runs of schema
+    init all pass with an identical table set.
+  - *UI glyph/encoding integrity*: the CI-only corruption checks (U+FFFD, flattened `?` icons,
+    `'?':'?'` caret ternaries) now also run as unit tests.
+  - *No-Python guard*: no `.py` file may exist outside archived `py.old/`.
+- **CI hardening**: `Docs + version consistency` step extended to cover Directory.Build.props and
+  the CHANGELOG entry; new `repo-guards` job fails any PR that touches `py.old/` and any commit
+  that adds Python outside it.
+- Assembly/package version now correctly stamps as the real release version (was 1.8.15.6).
+
+## v1.8.27 — Roadmap / documentation consolidation (NORTH_STAR)
+
+Phase 1 of the master roadmap: stop roadmap drift by making one canonical direction document.
+
+- New **`docs/NORTH_STAR.md`** — the single, ordered build order from the current baseline (v1.8.26)
+  through the V2 Homelab Command Center and V3 bounded autonomous operator, plus the non-negotiable
+  safety/architecture rules, the global bug-prevention gates, and the version-completion template.
+- `docs/ROADMAP.md`, `docs/UI_ROADMAP.md`, and `docs/AUTONOMY.md` now carry a status block marking them
+  as retained subsystem history and pointing to `NORTH_STAR.md`.
+- README links `NORTH_STAR.md` from the version notes and adds a v1.8.27 changelog row.
+- Docs only; no runtime behavior change.
+
+## v1.8.26.1 — Harden auto-apply git for the systemd sandbox
+
+Two fixes found while bringing the v1.8.26 loop up on a hardened LXC (`ProtectSystem=strict`):
+
+- **Commit identity inline.** The service user (`anthill`) has no global git identity, so `git commit`
+  failed with "Please tell me who you are." The commit now sets it inline —
+  `git -c user.name="ANTHILL Auto-Apply" -c user.email="anthill@localhost" commit` — so it never
+  depends on host git config.
+- **Writable `known_hosts`.** `ssh` records the remote host key on first connect, but the service
+  user's `~/.ssh` is read-only under `ProtectSystem=strict`. `GIT_SSH_COMMAND` now points
+  `UserKnownHostsFile` at `/tmp/anthill_known_hosts` (writable via `PrivateTmp`, per-service), so the
+  push succeeds without adding `.ssh` to `ReadWritePaths`.
+
+Note: a non-`.anthill` auto-apply workspace still needs a systemd drop-in adding it to
+`ReadWritePaths` (the sandbox mounts everything else read-only), and the workspace must be a clone
+owned by the service user, checked out on the `<username>-anthill` branch.
+
+## v1.8.26 — Auto-apply git integration (standalone branch, never main)
+
+Expands the "Git-commit verified changes" toggle into a real, safety-gated git workflow for the
+Director's auto-apply. After a green verify, ANTHILL commits the applied files to a standalone branch
+and can push it for review — **without ever touching main**.
+
+- New config: `autonomy_autoapply_git_username` (→ branch `<username>-anthill`),
+  `autonomy_autoapply_git_remote` (default `origin`), `autonomy_autoapply_git_ssh_key_path`,
+  `autonomy_autoapply_git_push`. Surfaced in **Security → Autonomous Auto-Apply** (username field shows
+  the resulting branch; remote; SSH key path; "Push branch to origin" toggle).
+- **SSH deploy key by reference:** the key is used via `GIT_SSH_COMMAND="ssh -i <path> …"`. Only the
+  *path* is stored/shown; no key material is ever read into config, DB, UI, logs, or events.
+- **Flow (per kept auto-apply):** verify the workspace is on `<username>-anthill` (create/checkout is
+  a one-time operator step) → `git add`/`commit` the applied files → if push is on, `git fetch` +
+  merge `origin/main` **into** the branch (one-way sync) → `git push <remote> <branch>` via the key.
+- **Hard main-safety:** refuses to commit if the workspace is on `main`/`master`; only ever commits
+  and pushes the standalone branch; never merges the branch into main; never force-pushes;
+  fail-closed (a git error keeps the change on disk and logs `autonomy_autoapply_git_failed`).
+- Open PRs from the pushed branch on GitHub; filing PRs/issues from ANTHILL needs the GitHub API
+  (a token) and is a separate follow-up, out of scope for an SSH deploy key.
+
+**Operator setup (one-time, on the host clone):** create the deploy key, add its public half to the
+repo (Settings → Deploy keys, allow write), then `cd <workspace> && git checkout -b <username>-anthill
+origin/main`. Point the SSH key path setting at the private key.
+
 ## v1.8.25.4 — Auto-Apply Security toggles never saved
 
 The two Autonomous Auto-Apply toggles — "Enable auto-apply" (`autonomy_autoapply_enabled`) and
@@ -1395,107 +1674,4 @@ Added:
   - **Mission Coordinator** — may *only* send missions to the Queen and read the event logs (plus
     live status to watch them); everything else is denied at the API and hidden in the UI.
 
-  Passwords are salted **PBKDF2-SHA256** (120k iterations), verified in constant time. New `users`
-  table (schema v9, migration `user_accounts`); endpoints `GET /auth/status`, `POST /auth/{setup,
-  login,logout}`, `GET /auth/me`, and `GET/POST/PATCH/DELETE /users`. A 👥 Users management page
-  lets admins create accounts, assign roles, reset passwords, enable/disable, and delete. Changing a
-  user's password, role, or status immediately revokes their active sessions, and the last remaining
-  administrator can never be demoted, disabled, or deleted. CLI recovery: `--add-user <u> <p> [role]`
-  and `--set-password <u> <p>`.
-- **`ANTHILL_API_TOKEN` is now optional** (and no longer required to boot). If set (≥ 32 chars) it
-  acts as a programmatic **admin** bearer for scripts/CI; otherwise authentication is purely account-based.
-- **Live, actionable console** (same deep-navy/yellow theme):
-  - **Editable settings** — Ollama host/model, per-role model routes, capability gates, limits, and
-    autonomy budgets are all editable from the page and persisted to `config.json`
-    (`GET/POST /settings`). Whitelisted keys only; hard security boundaries stay file-controlled.
-  - **Movable / renamable / recolorable ants** — drag to arrange the anthill, double-click to rename,
-    set per-caste accent colours and model routes from a dedicated **Ant Configuration** page. Layout
-    persists server-side (`GET/PUT /ui/state`, stored in `.anthill/ui_state.json`).
-  - **Filterable Event Log** — by ant, event type, severity (errors/alarms), and time window, plus
-    text search (`GET /events/json`).
-  - **Pheromone Memory page** — strength table with success/failure/net counts and one-click pruning
-    of weak and failure-dominant trails (`GET /pheromones/json`, `POST /pheromones/prune`).
-
-Validation:
-
-- `dotnet test`: **52/52** pass. Self-test **15/15** on a fresh database (migration ledger at 9 entries).
-- Live HTTP smoke test: first-run setup, login, role gating (coordinator blocked from `/users`,
-  `/settings`, `/pheromones/json`), session revocation on password change, logout, last-admin
-  protection, and CLI password recovery all verified.
-
-## v1.8.1 — spec-ingestion + autonomy Phases 0–1
-
-Schema bumped to **v8**. Autonomy is fail-closed and off by default.
-
-Added:
-
-- **Long-input / specification-ingestion handling**: mission goals over `long_input_threshold`
-  are split into bounded, non-critical section-analysis tasks (run in parallel), a synthesis
-  task, then verification. A failed section degrades the mission to Partial instead of aborting
-  it. New `Task.Critical` flag generalises fault-tolerant fan-in. Config: `spec_ingestion_enabled`,
-  `long_input_threshold`, `max_section_chars`, `max_section_tasks`.
-- **Autonomy Phase 0 (rails)**: `objectives` backlog + `autonomy_runs` audit-trail tables,
-  domain models, durable kill switch (`.anthill/STOP` + in-process flag), rate `BudgetGuard`,
-  and the run-outcome circuit breaker. Config: `autonomy_enabled`, `autonomy_poll_seconds`,
-  `autonomy_max_missions_per_hour`, `autonomy_max_missions_per_day`, `autonomy_max_consecutive_failures`.
-- **Autonomy Phase 1 (Director loop, MVP)**: `ColonyDirector` works the backlog one mission at
-  a time (charter-as-goal; the LLM Strategist is Phase 2), queue-for-review writes only.
-  `--autonomous` boot flag and a control plane: `GET /autonomy/status`, `POST /autonomy/{start,stop}`,
-  `GET /autonomy/runs`, and `/objectives` CRUD.
-
-Fixed:
-
-- Self-test now passes 15/15 on a **fresh** database: system/sentinel missions are seeded so
-  event/message probes satisfy the `events → missions` foreign key on a clean install.
-
-## v1.8.0 — .NET / native C++ hybrid migration
-
-Language and platform migration of the v1.7.1 scheduler-hardening checkpoint from Python to
-an idiomatic .NET 8 (C#) solution with a native C++20 compute kernel. Behaviour is preserved;
-the harness gains a service-grade runtime, encryption at rest, and a caching speed layer.
-
-Added:
-
-- Native C++20 compute kernel (`native/anthill_kernel`) exposing a C ABI for pheromone
-  reinforcement/decay, mission scoring, and dependency-graph cycle detection, bound via P/Invoke
-  (`Native/NativeKernel.cs`) with a bit-identical managed fallback when the library is absent.
-- AES-256-GCM field encryption for sensitive columns at rest (`Security/FieldCipher.cs`),
-  keyed from `ANTHILL_ENCRYPTION_KEY` or an auto-generated owner-only workspace key file.
-- `IMemoryCache` read-through speed layer over hot memory reads with generation-based invalidation.
-- xUnit test suite: scheduler regressions, security regressions, and native-kernel equivalence.
-- `Anthill.Cli` (`anthill`) with `--mission`, `--api`, `--selftest`, `--status`, `--config`, `--routes`.
-- Reworked, animated colony console UI (Queen core, branching task tunnels, pheromone trails, live events).
-
-Changed:
-
-- `anthill/runtime.py` (7,177 lines) decomposed into a structured `Anthill.Core` class library;
-  the FastAPI app became an ASP.NET Core minimal-API host (`Anthill.Api`).
-- Pheromone trail strength updates remain exact (`round(strength + delta, 4)` clamped); mission
-  scoring and cycle detection now run through the native kernel.
-- Database access moved to `Microsoft.Data.Sqlite` with WAL, busy timeout, foreign keys, fully
-  parameterised statements, and indexes on the hottest lookups.
-- Version bumped to **1.8.0** to mark the language migration (schema version unchanged at 7).
-
-Preserved (v1.6.4 / v1.7.x security + scheduler invariants):
-
-- API token strength validation and constant-time comparison at boot.
-- Failed-auth rate limiter (counts failures only); mission submission rate limiting.
-- Security headers on every response; no public docs/OpenAPI endpoints.
-- SSRF/local/private/non-http(s) URL filtering before agents or source records see a URL.
-- Prompt-injection system-boundary prefix on every agent prompt.
-- SQLite file hardening and automatic pre-mission DB backup.
-- Tool gates (shell, file writing, patch application, web search) fail closed by default.
-- Scheduler ownership of dependency validation, ready/blocked/skipped transitions, bounded
-  retries, duplicate-id safety, lifecycle metadata, and metadata-first `task-graph-v2` export.
-- Default graph export excludes full result summaries; `read_graph_results` gates the full export.
-
-Validation:
-
-- Native kernel: builds with g++/CMake; behaviour verified against the Python contract.
-- `dotnet build` / `dotnet test`: scheduler, security, and native-kernel suites.
-- `anthill --selftest`: framework self-test harness (15 checks).
-
-## v1.7.1 (Python, prior baseline)
-
-Scheduler hardening checkpoint. See the original `anthill_v1_7_1_codex_handoff/CHANGELOG.md`
-for the full Python history through v1.6.4.
+  Passwords are salted

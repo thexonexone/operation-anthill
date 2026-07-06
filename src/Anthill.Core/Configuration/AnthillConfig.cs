@@ -51,6 +51,19 @@ public sealed class AnthillConfig
     [JsonPropertyName("operator_shell_enabled")] public bool OperatorShellEnabled { get; set; } = true;
     [JsonPropertyName("operator_shell_dir")] public string OperatorShellDir { get; set; } = "";
 
+    // Homelab foundation (v1.9.0, NORTH_STAR Phase 4): read-only subsystem, everything off by default.
+    [JsonPropertyName("homelab_enabled")] public bool HomelabEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_scheduler_enabled")] public bool HomelabSchedulerEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_mock_providers_enabled")] public bool HomelabMockProvidersEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_max_concurrent_checks")] public int HomelabMaxConcurrentChecks { get; set; } = 2;
+    // Health checks + notifications (v1.11.0, NORTH_STAR Phase 7): awareness only, no auto-remediation.
+    [JsonPropertyName("homelab_health_interval_seconds")] public int HomelabHealthIntervalSeconds { get; set; } = 60;
+    [JsonPropertyName("homelab_health_timeout_ms")] public int HomelabHealthTimeoutMs { get; set; } = 5000;
+    [JsonPropertyName("homelab_notifications_enabled")] public bool HomelabNotificationsEnabled { get; set; } = false;
+    [JsonPropertyName("homelab_slack_webhook")] public string HomelabSlackWebhook { get; set; } = "";
+    [JsonPropertyName("homelab_discord_webhook")] public string HomelabDiscordWebhook { get; set; } = "";
+    [JsonPropertyName("homelab_generic_webhook")] public string HomelabGenericWebhook { get; set; } = "";
+
     [JsonPropertyName("parallel_execution_enabled")] public bool ParallelExecutionEnabled { get; set; } = true;
     [JsonPropertyName("max_parallel_workers")] public int MaxParallelWorkers { get; set; } = 3;
     [JsonPropertyName("max_web_searches_per_mission")] public int MaxWebSearchesPerMission { get; set; } = 3;
@@ -129,8 +142,15 @@ public sealed class AnthillConfig
     [JsonPropertyName("autonomy_autoapply_verify_cmd")] public string AutonomyAutoApplyVerifyCmd { get; set; } = "";
     // Hard timeout (seconds) for the verify step.
     [JsonPropertyName("autonomy_autoapply_verify_timeout")] public int AutonomyAutoApplyVerifyTimeout { get; set; } = 900;
-    // After a green verify, also `git add` + `git commit` the change locally (never pushed). Off = leave on disk.
+    // After a green verify, also `git add` + `git commit` the change locally on the standalone branch. Off = leave on disk.
     [JsonPropertyName("autonomy_autoapply_git_commit")] public bool AutonomyAutoApplyGitCommit { get; set; } = false;
+    // v1.8.26: git integration for auto-apply. Commits (and optionally pushes) verified changes to a
+    // dedicated standalone branch — NEVER main. The SSH deploy key is referenced by PATH on the host,
+    // never stored as key material. Branch name is derived as "<git_username>-anthill".
+    [JsonPropertyName("autonomy_autoapply_git_push")] public bool AutonomyAutoApplyGitPush { get; set; } = false;
+    [JsonPropertyName("autonomy_autoapply_git_remote")] public string AutonomyAutoApplyGitRemote { get; set; } = "origin";
+    [JsonPropertyName("autonomy_autoapply_git_username")] public string AutonomyAutoApplyGitUsername { get; set; } = "";
+    [JsonPropertyName("autonomy_autoapply_git_ssh_key_path")] public string AutonomyAutoApplyGitSshKeyPath { get; set; } = "";
     // v1.8.21 fix: on deployments with no build toolchain (e.g. a published-binary LXC), the built-in
     // `dotnet build && dotnet test` verify always fails, so every auto-applied patch is rolled back and
     // nothing ever persists. When this is true AND no verify command is configured, auto-apply KEEPS the

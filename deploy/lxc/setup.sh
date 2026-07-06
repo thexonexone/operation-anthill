@@ -73,14 +73,24 @@ else
     command -v git >/dev/null 2>&1 || apt-get install -y git
     mkdir -p "$INSTALL_DIR"
     if [ -d "$INSTALL_DIR/src/.git" ]; then
-        log "Existing checkout found — pulling latest"
-        git -C "$INSTALL_DIR/src" pull --ff-only
+        # v1.10.0 upgrade-path fix: `git pull --ff-only` upgraded whatever branch the build
+        # checkout happened to be sitting on. Since the auto-apply git integration (v1.8.26), a
+        # checkout can end up parked on the standalone '<username>-anthill' branch (or with local
+        # drift), so every re-run silently rebuilt STALE code and the deployed version froze while
+        # releases moved on. The build checkout must always build origin/main — force it.
+        log "Existing checkout found — resetting build checkout to origin/main"
+        git -C "$INSTALL_DIR/src" fetch origin
+        git -C "$INSTALL_DIR/src" checkout -B main origin/main
     else
         log "Cloning $REPO_URL"
         git clone "$REPO_URL" "$INSTALL_DIR/src"
     fi
     SRC_DIR="$INSTALL_DIR/src"
 fi
+
+# Say exactly which version this run is about to build, so a stale checkout can never hide again.
+BUILD_VERSION="$(grep -oE 'Version = "[^"]+"' "$SRC_DIR/src/Anthill.Core/Configuration/AnthillRuntime.cs" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+log "Building ANTHILL v${BUILD_VERSION:-unknown} ($(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo 'no-git'))"
 
 # ---------------------------------------------------------------------------
 log "Publishing self-contained linux-x64 binary"
@@ -129,6 +139,75 @@ log "Creating dedicated service user + data directory"
 id -u "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_DIR" "$SERVICE_USER"
 mkdir -p "$INSTALL_DIR/.anthill"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+
+# ---------------------------------------------------------------------------
+log "Provisioning the auto-apply workspace, git identity, and deploy-key slot"
+# ---------------------------------------------------------------------------
+# The autonomous auto-apply loop (Settings → Security → Auto-Apply) verifies a patch, then can
+# commit it to a standalone branch "<github-username>-anthill" and push via an SSH deploy key.
+# For that to work unattended on a locked-down systemd host, four things must already be in place —
+# exactly the steps that previously had to be done by hand on the container:
+#   1. a git checkout the agent can WRITE to. The agent workspace defaults to
+#      $INSTALL_DIR/.anthill/workspace, which already sits under the unit's ReadWritePaths=.anthill,
+#      so it is writable out of the box — we just make it an actual clone so git-commit has a repo.
+#   2. a git identity for the service user, so `git commit` never fails with "Please tell me who you
+#      are" (the app also sets an inline identity; this also covers any manual/first-run git).
+#   3. a safe.directory entry, so git won't refuse a tree with "dubious ownership" after a root clone.
+#   4. a private ~/.ssh slot (700) for the deploy key referenced BY PATH in the config. The key
+#      itself is NEVER generated or stored by this script — the operator drops it in and points the
+#      config at it (Settings → Security → Auto-Apply → "SSH deploy key path").
+WORKSPACE_DIR="$INSTALL_DIR/.anthill/workspace"
+if [ ! -d "$WORKSPACE_DIR/.git" ]; then
+    if [ -z "$(ls -A "$WORKSPACE_DIR" 2>/dev/null)" ]; then
+        command -v git >/dev/null 2>&1 || apt-get install -y git
+        log "Cloning a writable agent workspace at $WORKSPACE_DIR"
+        git clone "$REPO_URL" "$WORKSPACE_DIR"
+    else
+        echo "    WARNING: $WORKSPACE_DIR exists and is not a git checkout — leaving it untouched. Auto-apply git-commit needs a git repo here; move or clear it and re-run to enable that path."
+    fi
+else
+    git -C "$WORKSPACE_DIR" remote set-url origin "$REPO_URL" 2>/dev/null || true
+fi
+
+# If the operator has already set a GitHub username (an upgrade re-run), make sure the standalone
+# branch exists and is checked out — the app refuses to auto-commit unless the workspace is already
+# on it, and never on main. On a first-ever install the username isn't known yet, so the workspace
+# stays on the default branch until the operator configures it and re-runs this script.
+CONFIG_JSON="$INSTALL_DIR/.anthill/config.json"
+GH_USER=""
+if [ -f "$CONFIG_JSON" ]; then
+    GH_USER="$(grep -oE '"autonomy_autoapply_git_username"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_JSON" | sed -E 's/.*"([^"]*)"[[:space:]]*$/\1/')"
+fi
+if [ -n "$GH_USER" ] && [ -d "$WORKSPACE_DIR/.git" ]; then
+    BRANCH="${GH_USER}-anthill"
+    log "Ensuring standalone auto-apply branch '$BRANCH' is checked out in the workspace"
+    git -C "$WORKSPACE_DIR" fetch origin 2>/dev/null || true
+    git -C "$WORKSPACE_DIR" checkout -B "$BRANCH" 2>/dev/null || true
+fi
+
+# Run a git command as the service user, tolerating hosts without `runuser` (fall back to `su`).
+run_as_service() { runuser -u "$SERVICE_USER" -- "$@" 2>/dev/null || su -s /bin/sh "$SERVICE_USER" -c "$(printf '%q ' "$@")" 2>/dev/null || true; }
+run_as_service git config --global user.name  "ANTHILL Auto-Apply"
+run_as_service git config --global user.email  "anthill@localhost"
+[ -d "$WORKSPACE_DIR/.git" ] && run_as_service git config --global --add safe.directory "$WORKSPACE_DIR"
+
+# Private deploy-key slot — directory + perms only; the key is provided by the operator, never here.
+SSH_DIR="$INSTALL_DIR/.ssh"
+mkdir -p "$SSH_DIR"
+chmod 700 "$SSH_DIR"
+if [ ! -e "$SSH_DIR/README" ]; then
+    cat > "$SSH_DIR/README" <<'SSHREADME'
+Drop a repo-scoped SSH *deploy key* here (e.g. anthill_deploy) to let auto-apply PUSH the standalone
+branch. Generate it on your workstation, add the .pub as a WRITE-enabled deploy key on the GitHub
+repo, then copy the PRIVATE key here (chmod 600) and set its path in
+Settings → Security → Auto-Apply → "SSH deploy key path" (and enable "Push branch to origin").
+The key never leaves this host and is referenced by path only — it is never stored in the app config.
+
+  ssh-keygen -t ed25519 -f anthill_deploy -C anthill-deploy   # run on your workstation
+SSHREADME
+fi
+find "$SSH_DIR" -maxdepth 1 -type f -exec chmod 600 {} \; 2>/dev/null || true
+chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.anthill" "$SSH_DIR"
 
 # ---------------------------------------------------------------------------
 log "Generating a static API token (optional — the web UI creates an admin account regardless)"
@@ -191,6 +270,31 @@ fi
 systemctl daemon-reload
 systemctl enable anthill >/dev/null
 systemctl restart anthill
+
+# ---------------------------------------------------------------------------
+# v1.10.0: prove the RUNNING version matches what was just built. The UI header renders the
+# /health version, so this check is exactly "what the operator will see in the browser". A
+# mismatch means an old binary or a second instance is still serving — the failure mode that
+# silently pinned deployments to stale versions before the origin/main checkout fix above.
+# ---------------------------------------------------------------------------
+API_PORT="8713"
+if [ -f "$CONFIG_JSON" ]; then
+    P="$(grep -oE '"api_port"[[:space:]]*:[[:space:]]*[0-9]+' "$CONFIG_JSON" | grep -oE '[0-9]+$' || true)"
+    [ -n "$P" ] && API_PORT="$P"
+fi
+RUNNING=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    RUNNING="$(curl -fsS "http://127.0.0.1:${API_PORT}/health" 2>/dev/null | grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"$/\1/' || true)"
+    [ -n "$RUNNING" ] && break
+    sleep 2
+done
+if [ -n "$RUNNING" ] && [ "$RUNNING" = "${BUILD_VERSION:-}" ]; then
+    log "Running version verified: v$RUNNING (matches the build — the UI header will show this)"
+elif [ -n "$RUNNING" ]; then
+    die "VERSION MISMATCH: built v${BUILD_VERSION:-unknown} but port $API_PORT is serving v$RUNNING — an old binary or another instance is still running."
+else
+    echo "    WARNING: could not read http://127.0.0.1:${API_PORT}/health after 30s — verify manually: curl -s http://127.0.0.1:${API_PORT}/health"
+fi
 
 sleep 2
 echo
