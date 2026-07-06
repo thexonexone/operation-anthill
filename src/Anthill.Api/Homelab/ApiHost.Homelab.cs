@@ -1,10 +1,13 @@
 using Anthill.Core.Configuration;
 using Anthill.Core.Health;
 using Anthill.Core.Homelab;
+using Anthill.Core.Homelab.Approvals;
+using Anthill.Core.Incidents;
 using Anthill.Core.Homelab.Notifications;
 using Anthill.Core.Homelab.Scheduling;
 using Anthill.Core.Homelab.Security;
 using Anthill.Core.Integrations;
+using Anthill.Core.Integrations.Proxmox;
 
 namespace Anthill.Api;
 
@@ -29,10 +32,16 @@ public static partial class ApiHost
     private sealed record ServiceUpsertRequest(string? Id, string? Name, string? NodeId, string? Url, List<int>? Ports, string? Protocol, string? Owner, string? Criticality, bool? InternetExposed, string? Notes);
     private sealed record DependencyUpsertRequest(string? Id, string? FromKind, string? FromId, string? ToKind, string? ToId, string? DependencyKind, string? Notes);
     private sealed record HealthScheduleUpsertRequest(string? Id, string? CheckKind, string? Target, string? ServiceId, string? NodeId, bool? Enabled, int? TimeoutMs);
+    private sealed record DeviceUpsertRequest(string? Id, string? Name, string? Kind, string? Mac, string? Ip, string? Vlan, bool? Known, string? Notes);
+    private sealed record IncidentOpenRequest(string? Title, string? SubjectKind, string? SubjectId, string? Severity);
+    private sealed record IncidentStatusRequest(string? Status, string? RootCause);
 
     public static IReadOnlyList<FakeHomelabProvider> HomelabProviders { get; private set; } = Array.Empty<FakeHomelabProvider>();
     public static NotificationService HomelabNotifier { get; private set; } = null!;
     public static HealthCheckRunner HomelabHealth { get; private set; } = null!;
+    public static ProxmoxInventoryProvider? HomelabProxmox { get; private set; }
+    public static RiskAnalyzer HomelabRisks { get; private set; } = null!;
+    public static IncidentManager HomelabIncidents { get; private set; } = null!;
 
     private static void InitHomelab()
     {
@@ -42,6 +51,8 @@ public static partial class ApiHost
         HomelabJobs = new HomelabScheduler(Homelab, AnthillRuntime.HomelabMaxConcurrentChecks);
         HomelabNotifier = new NotificationService(Homelab);
         HomelabHealth = new HealthCheckRunner(Homelab, HomelabTargets, HomelabNotifier);
+        HomelabRisks = new RiskAnalyzer(Homelab);
+        HomelabIncidents = new IncidentManager(Homelab);
 
         // v1.9.1: the mock-provider harness — the shared execution pattern every real provider
         // follows. Mocks are deterministic and network-free; registered only when the mock gate
@@ -64,8 +75,30 @@ public static partial class ApiHost
         // per-subsystem timers). Gated by homelab_enabled; checks themselves only touch hosts on
         // the target allowlist and run under strict timeouts.
         if (AnthillRuntime.EnableHomelab)
+        {
             HomelabJobs.Register(new HomelabScheduledJob("health-checks",
                 TimeSpan.FromSeconds(AnthillRuntime.HomelabHealthIntervalSeconds), HomelabHealth.RunAllAsync));
+            // v1.13.0: deterministic risk analysis over existing inventory — zero network I/O.
+            HomelabJobs.Register(new HomelabScheduledJob("risk-analysis",
+                TimeSpan.FromSeconds(AnthillRuntime.HomelabRiskIntervalSeconds), HomelabRisks.RunAsync));
+            // v1.14.0: incident sweep — turns incident_candidate events into deduped incidents.
+            HomelabJobs.Register(new HomelabScheduledJob("incident-sweep",
+                TimeSpan.FromSeconds(AnthillRuntime.HomelabIncidentSweepSeconds), HomelabIncidents.SweepAsync));
+        }
+
+        // v1.12.0: Proxmox read-only sync. GET-only client; token pulled from the credential
+        // store per run (never cached in config); host must be on the target allowlist.
+        if (AnthillRuntime.EnableHomelab && AnthillRuntime.EnableHomelabProxmox
+            && !string.IsNullOrWhiteSpace(AnthillRuntime.HomelabProxmoxHost))
+        {
+            var pveClient = new ProxmoxApiClient(
+                AnthillRuntime.HomelabProxmoxHost, AnthillRuntime.HomelabProxmoxPort, HomelabTargets,
+                () => HomelabCredentials.GetSecret(AnthillRuntime.HomelabProxmoxCredentialId, usedBy: "ProxmoxInventoryProvider"),
+                AnthillRuntime.HomelabProxmoxInsecureTls);
+            HomelabProxmox = new ProxmoxInventoryProvider(pveClient, Homelab);
+            HomelabJobs.Register(new HomelabScheduledJob("proxmox-sync",
+                TimeSpan.FromSeconds(AnthillRuntime.HomelabProxmoxSyncIntervalSeconds), HomelabProxmox.SyncInventoryAsync));
+        }
 
         if (AnthillRuntime.EnableHomelabScheduler && HomelabJobs.Jobs.Count > 0)
         {
@@ -233,6 +266,170 @@ public static partial class ApiHost
         // v1.9.1: secret-free provider statuses (mock harness now; real providers from v1.10+).
         app.MapGet("/homelab/providers", (HttpContext ctx) =>
             RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabProviders.Select(p => p.Status()).ToList()));
+
+        // ---- Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8) --------------------------
+
+        app.MapGet("/homelab/vms", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListVms()));
+
+        app.MapGet("/homelab/containers", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListContainers()));
+
+        app.MapGet("/homelab/storage", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListStoragePools()));
+
+        app.MapGet("/homelab/proxmox/status", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["enabled"] = AnthillRuntime.EnableHomelabProxmox,
+                ["host"] = AnthillRuntime.HomelabProxmoxHost,
+                ["credential_id"] = AnthillRuntime.HomelabProxmoxCredentialId, // id only — never the token
+                ["credential_configured"] = HomelabCredentials.ListStatuses()
+                    .Any(c => c.Id == AnthillRuntime.HomelabProxmoxCredentialId.Trim().ToLowerInvariant() && c.Configured),
+                ["status"] = HomelabProxmox?.GetStatus(),
+                ["vms"] = Homelab.ListVms().Count,
+                ["containers"] = Homelab.ListContainers().Count,
+                ["storage_pools"] = Homelab.ListStoragePools().Count,
+                ["read_only"] = true, // structural: the client has no write methods
+            });
+        });
+
+        app.MapPost("/homelab/proxmox/sync", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            if (HomelabProxmox is null)
+                return ApiJson.Error("Proxmox integration is not active — set homelab_enabled, homelab_proxmox_enabled, and homelab_proxmox_host, then restart.", "disabled");
+            var result = await HomelabProxmox.SyncInventoryAsync(ctx.RequestAborted);
+            return result.Ok
+                ? ApiJson.Ok(new Dictionary<string, object?> { ["items"] = result.ItemCount }, result.Message)
+                : ApiJson.Error("Proxmox sync failed: " + result.Message, "sync_failed");
+        });
+
+        // ---- Command Center (v2.0.0, NORTH_STAR Phase 11) -----------------------------------------
+        // ONE aggregation endpoint: everything the dashboard needs, assembled by the testable
+        // CommandCenter builder. No fabricated values — missing data arrives as 0/empty and the UI
+        // labels it ("no data yet" / "not configured").
+
+        app.MapGet("/homelab/dashboard", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            var pending = -1;
+            try { pending = Queen.Memory.CountPendingApprovals(); } catch { /* stays -1 = unavailable */ }
+            return ApiJson.Ok(CommandCenter.Build(Homelab, HomelabHealth, pending));
+        });
+
+        app.MapGet("/homelab/graph/dependents/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_homelab"); if (auth is not null) return auth;
+            var dashboard = CommandCenter.Build(Homelab, HomelabHealth);
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["node"] = id,
+                ["dependents"] = CommandCenter.Dependents(id, dashboard.GraphEdges),
+            });
+        });
+
+        // ---- Incident + change memory (v1.14.0, NORTH_STAR Phase 10) ------------------------------
+
+        app.MapGet("/homelab/incidents", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListIncidents()));
+
+        app.MapPost("/homelab/incidents", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            IncidentOpenRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<IncidentOpenRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Title)) return ApiJson.Error("Incident title is required.", "bad_request");
+            var incident = HomelabIncidents.Open(body.Title!.Trim(), (body.SubjectKind ?? "manual").Trim(),
+                (body.SubjectId ?? body.Title!).Trim(), (body.Severity ?? "warning").Trim(), CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(incident, $"Incident '{incident.Title}' is {incident.Status}.");
+        });
+
+        app.MapGet("/homelab/incidents/{id}/timeline", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabIncidents.Timeline(id)));
+
+        app.MapGet("/homelab/incidents/{id}/similar", (HttpContext ctx, string id) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(HomelabIncidents.Similar(id)));
+
+        app.MapPost("/homelab/incidents/{id}/status", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            IncidentStatusRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<IncidentStatusRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var ok = HomelabIncidents.SetStatus(id, (body?.Status ?? "").Trim().ToLowerInvariant(),
+                (body?.RootCause ?? "").Trim(), CurrentUsername(ctx) ?? "operator");
+            return ok
+                ? ApiJson.Ok(Homelab.ListIncidents(), "Incident updated." +
+                    (string.IsNullOrWhiteSpace(body?.RootCause) ? "" : " Root cause recorded — similar future incidents will surface it as a suggested fix."))
+                : ApiJson.Error("Unknown incident or invalid status (open|investigating|resolved).", "bad_request");
+        });
+
+        // v1.14.0: the ONE pending-approvals view (IApprovable). Today it projects patch
+        // approvals; V2.1 action proposals and V2.4 network changes join the same queue.
+        app.MapGet("/homelab/approvals/unified", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_approvals"); if (auth is not null) return auth;
+            var views = Queen.Memory.ListApprovalRequests(null, 100)
+                .Select(row => ApprovableProjections.FromPatchApproval(row));
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["items"] = ApprovableProjections.DedupePending(views),
+                ["kinds"] = new[] { "patch" }, // "homelab_action" arrives in V2.1, "network_change" in V2.4
+                ["design"] = "docs/APPROVALS.md",
+            });
+        });
+
+        // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) ---------------------------
+
+        app.MapGet("/homelab/devices", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListNetworkDevices()));
+
+        app.MapPost("/homelab/devices", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            DeviceUpsertRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<DeviceUpsertRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (string.IsNullOrWhiteSpace(body?.Name) && string.IsNullOrWhiteSpace(body?.Mac))
+                return ApiJson.Error("A device needs at least a name or a MAC address.", "bad_request");
+            var device = new NetworkDevice
+            {
+                Id = string.IsNullOrWhiteSpace(body!.Id) ? Guid.NewGuid().ToString() : body.Id!.Trim(),
+                Name = (body.Name ?? "").Trim(), Kind = (body.Kind ?? "unknown").Trim(),
+                Mac = (body.Mac ?? "").Trim(), Ip = (body.Ip ?? "").Trim(), Vlan = (body.Vlan ?? "").Trim(),
+                Known = body.Known ?? true, Notes = (body.Notes ?? "").Trim(),
+            };
+            Homelab.UpsertNetworkDevice(device, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListNetworkDevices(), $"Device '{(device.Name.Length > 0 ? device.Name : device.Mac)}' saved.");
+        });
+
+        app.MapDelete("/homelab/devices/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            Homelab.RemoveNetworkDevice(id, CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListNetworkDevices(), "Device removed.");
+        });
+
+        app.MapGet("/homelab/risks", (HttpContext ctx) =>
+            RequireAuth(ctx, "read_homelab") ?? ApiJson.Ok(Homelab.ListRiskRecords()));
+
+        app.MapPost("/homelab/risks/analyze", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            var (open, resolved) = HomelabRisks.Analyze(CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListRiskRecords(), $"Risk analysis complete: {open} open finding(s), {resolved} resolved.");
+        });
+
+        app.MapPost("/homelab/risks/{id}/ack", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "manage_homelab_integrations"); if (auth is not null) return auth;
+            Homelab.SetRiskStatus(id, "acknowledged", CurrentUsername(ctx) ?? "operator");
+            return ApiJson.Ok(Homelab.ListRiskRecords(), "Finding acknowledged — it stays visible but won't be re-flagged as open.");
+        });
 
         // ---- Health checks + notifications (v1.11.0, NORTH_STAR Phase 7) --------------------------
 

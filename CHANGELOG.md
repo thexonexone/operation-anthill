@@ -1,5 +1,238 @@
 # ANTHILL Changelog
 
+## v2.0.0 — 🐜 Homelab Command Center launch (NORTH_STAR Phase 11)
+
+The V2 era begins: everything the V1.9–V1.14 line taught ANTHILL to know, in one living console
+view. Built in two deliberate passes (functional data layer first, identity layer second), still
+read-mostly: visibility, not control. Answers the eight NORTH_STAR questions at a glance — what is
+broken, where it runs, what it depends on, what changed, what to do next, what is not backed up,
+what is exposed, what is unknown.
+
+### Pass 1 — functional data layout & routing
+- **One aggregation endpoint** `GET /homelab/dashboard`, assembled by the pure, testable
+  `CommandCenter` builder: entity counts, latest-per-target health rollup, active incidents, open
+  risk errors/warnings + top findings, storage used/total + backup-capable pool count, last
+  health/proxmox/risk job stamps, pending-approvals count, failed checks, recent changes, the full
+  dependency graph, and deterministic **"What Should I Do Next"** recommendations (derived only
+  from real signals: failing targets, error incidents/findings, pending approvals, missing checks).
+- **Dependency graph as a first-class feature**: nodes for every host and service (status from
+  health data — `unknown` when unchecked, never assumed healthy), edges from implicit `runs_on`
+  placement plus the mapped dependency table, **failure impact propagation** (a failed service
+  marks its host worst-of and every touching edge impacted), exposure and open-incident flags per
+  node, click-to-select highlighting connected paths and listing **transitive dependents** —
+  "what depends on this?", answered visually and via `GET /homelab/graph/dependents/{id}`.
+- **Host & service detail drawers**: facts, status, uses/depended-on-by, related active incidents
+  and recent changes — opened by clicking any Hosts/Services row.
+- Tests (`CommandCenterTests`): empty state fabricates nothing (stamps stay empty, approvals stay
+  -1), aggregation faithfulness, graph edge construction, impact propagation through hosts and
+  dependent paths, node flags, transitive dependents, recommendation determinism.
+
+### Pass 2 — the ANTHILL identity layer
+- **Centralized semantic tokens** (`#hl-theme` CSS variables): health `--hl-health`, compute
+  `--hl-compute`, storage `--hl-storage`, security `--hl-security`, incidents `--hl-incident`,
+  memory/history `--hl-memory` — applied as card spines + section-head dots via one decoration
+  helper, consistent across chips, cards, and graph nodes.
+- **Colony-mesh background**: a pure-CSS low-contrast node/tunnel lattice behind the dashboard
+  (opacity ≤ .05, pointer-events none) — colony identity without touching readability.
+- **Command summary strip**: KPI chips (hosts, services, healthy/degraded/failed, incidents,
+  risks, VMs/CTs, storage+backup, pending approvals) with a **colony-link dot** derived strictly
+  from real job stamps (green pulse = a scheduler job ran in the last 15 minutes; amber = idle;
+  gray = never — labeled, never fabricated).
+- **Purposeful motion only**: pulse on failed/incident graph nodes and the live dot, row-flash
+  **connection cues** (click a failed check → related incidents flash; click a risk finding → the
+  services it names flash), hover emphasis on graph nodes — all disabled under
+  `prefers-reduced-motion`.
+- Every new visual degrades to labeled empty states ("no data yet", "not configured", "no graph
+  yet") — no value is ever invented for visual completeness.
+- Page renamed **Homelab Command Center**; no framework migration, single embedded vanilla
+  HTML/CSS/JS preserved, all existing routes/pages stable.
+
+## v1.14.0.1 — Unified approvals dedupe: collapse older pendings even when the newest is resolved
+
+Bug-finder/tester pass over the v1.14.0 code (last stop before V2.0). The incident/change-memory and
+`IApprovable` design hold up well — deterministic, repo-only, correct SQL, well-tested. One real
+logic bug in the unified-queue dedupe:
+
+- **`ApprovableProjections.DedupePending`** (behind `GET /homelab/approvals/unified`) only superseded
+  older pending duplicates when the *absolute newest* item in a dedupe group was itself pending
+  (`ordered[0].State == "pending"`). If the newest item was already approved/rejected/executed while
+  two older duplicates were still pending, **both** older items stayed pending — the unified queue
+  would show two live pending approvals for the same target, violating the stated "at most one pending
+  per key" invariant. Now it keeps the newest still-pending item and supersedes every older pending
+  one regardless of the newest item's state. Added a regression test for the newest-non-pending case
+  (the existing test only covered the newest-is-pending happy path).
+
+Nothing else found: structural sweep clean (version consistency, all `.cs` balance, `node --check`,
+ui-integrity), security sweep clean (TLS-bypass is Proxmox-only and config-gated, no secret logging,
+SQL interpolation is table-names/constants only, all 116 endpoints auth-gated).
+
+## v1.14.0 — Incident + change memory + the IApprovable design (NORTH_STAR Phase 10)
+
+Phase 10 of the master roadmap — the final phase of the V1.x line. ANTHILL now connects failures
+to recent changes and past fixes, and the unified approval abstraction that V2.1's actions build
+on is designed, shipped, and test-reviewed. Incident tracking, timelines, and recommendations
+only — nothing here can remediate anything.
+
+### Incident + change memory
+- **Auto-opened incidents**: the `incident-sweep` scheduler job turns the health system's
+  `incident_candidate` events (3 consecutive failures) into incidents, deduped per subject —
+  one open incident per failing thing, re-sweeps never duplicate. Manual opening via API/UI too.
+- **Incident timeline**: reconstructs everything around an incident — `change_log` entries from
+  the 24h lookback window before it opened are flagged **SUSPECT** ("what changed right before it
+  broke"), plus correlated homelab events and per-target health results through resolution,
+  chronologically ordered.
+- **Similar incidents + fix memory**: deterministic scoring (token overlap + same-subject/kind
+  bonuses) over past incidents; resolved matches carry their root cause verbatim as
+  *"this fixed it last time"*. Resolving with a root cause writes an `incident_fix_recorded`
+  event — the durable memory future incidents draw on.
+- **Repeated-failure patterns**: a subject producing 3+ incidents in 14 days is pattern-flagged
+  (`incident_pattern` event) and its new incidents open at error severity.
+- **API**: `GET|POST /homelab/incidents`, `GET /homelab/incidents/{id}/timeline`,
+  `GET /homelab/incidents/{id}/similar`, `POST /homelab/incidents/{id}/status`
+  (open|investigating|resolved + root cause).
+- **UI**: Incidents panel on the Homelab page — severity/status tables, a detail drawer with the
+  suspect-flagged timeline and similar-incident fix suggestions, resolve-with-root-cause flow,
+  and manual incident opening.
+
+### IApprovable (designed before V2.1, per the roadmap)
+- **`IApprovable`** interface + `ApprovableView` projection: ONE pending queue, ONE lifecycle
+  (pending → approved → executed / rejected / superseded; execution never from pending), ONE
+  dedupe rule (equal DedupeKeys can't both be pending; newer supersedes), per-kind renderers
+  (`patch_diff` today; `action_proposal` V2.1; `network_preview` V2.4).
+- **`GET /homelab/approvals/unified`**: today's patch approvals projected into the unified queue
+  via a read adapter over `approval_requests` — no new table, no migration, existing decision
+  endpoints untouched.
+- **`ActionProposal` skeleton** (deliberately inert: no executor exists, nothing constructs one,
+  risk defaults `high`): carries the Phase 12 blast-radius rubric inputs (dependency fan-out,
+  criticality, backup coverage, exposure, rollback note, dry-run availability) so V2.1 implements
+  against reviewed fields.
+- **`docs/APPROVALS.md`**: the canonical design doc — lifecycle, dedupe, renderer table, and the
+  five execution requirements V2.1 is bound to (separate approve/execute permissions, state
+  re-checks, HOMELAB_STOP, audit events, forbidden-actions enforcement in the executor).
+
+### Tests
+- `IncidentMemoryTests`: per-subject dedupe across resolve cycles, idempotent candidate sweep,
+  repeat-offender severity upgrade + pattern event, timeline suspect flagging + chronological
+  order + subject correlation, similar-incident ranking with verbatim fix surfacing, resolve
+  validation + fix-memory event, and the IApprovable design review (faithful patch projection,
+  supersede-on-dedupe, inert fail-safe ActionProposal).
+
+## v1.13.0 — Network + security awareness (NORTH_STAR Phase 9)
+
+Phase 9 of the master roadmap: understand the network shape and the obvious risks. Awareness and
+reporting only — no firewall/DNS/DHCP writes, and stronger: **zero network I/O**. Active scanning
+does not exist in this phase; if it ever arrives it ships disabled-by-default behind the target
+allowlist like every other prober.
+
+- **`RiskAnalyzer`** — deterministic rules over inventory ANTHILL already knows, producing all nine
+  NORTH_STAR findings: `risky_open_port` (legacy/cleartext ports; severity upgrades to error when
+  internet-exposed), `unknown_device`, `ownerless_service`, `un_backed_up_host` (workloads with no
+  backup-capable storage anywhere), `exposed_dashboard` (admin surfaces reachable from the
+  internet), `duplicate_ip` (across hosts AND network devices), `missing_dns_name`,
+  `service_without_health_check`, and `credential_never_verified`.
+- **Stable-id reconciliation**: findings upsert by `risk:{kind}:{subject}`, so re-analysis never
+  duplicates, **fixed problems auto-resolve**, and operator **acknowledgements survive re-runs**
+  (and still auto-resolve when the underlying issue is actually fixed).
+- **Network-device registry** (manual/import only): name/kind/MAC/IP/VLAN/known-flag/notes with
+  first/last-seen stamps; unknown devices become findings; devices ride the inventory
+  import/export bundle.
+- **Scheduler**: `risk-analysis` job on the shared scheduler (`homelab_risk_interval_seconds`,
+  default hourly) — repo-only work, safe at any cadence.
+- **API**: `GET|POST|DELETE /homelab/devices`, `GET /homelab/risks`,
+  `POST /homelab/risks/analyze` (run now), `POST /homelab/risks/{id}/ack`.
+- **UI**: Network & Risk section on the Homelab page — device registration + table with unknown
+  flagging, findings table with severity coloring/KPI counts, Analyze Now, and per-finding Ack.
+- **Tests** (`RiskAwarenessTests`, socket-free by construction): every finding rule, exposure
+  classification, duplicate-IP detection, watched-service suppression, un-backed-up-host
+  resolve-on-fix, stable reconciliation with sticky acks, the scheduler adapter, and device
+  import/export round-trip.
+
+## v1.12.0.1 — Proxmox client: don't follow redirects (SSRF hardening)
+
+Bug-finder/tester pass over the v1.12.0 Proxmox integration. The rest of it holds up well —
+GET-only by construction, target-allowlist gate before every request, token pulled from the
+credential store per call and never logged, defensive JSON parsing, `INSERT OR IGNORE` event dedup.
+One defense-in-depth gap:
+
+- **`ProxmoxApiClient` followed HTTP redirects** (`AllowAutoRedirect` left at the .NET default of
+  `true` on both the verified and insecure handlers). The allowlist gate validates the configured
+  host, but a `3xx` from a compromised or misconfigured node would bounce the authenticated GET to a
+  `Location` that was never allowlist-checked — an SSRF hole straight through the integration's
+  "safety by construction" premise. Both handlers now set `AllowAutoRedirect = false`; the PVE API
+  never legitimately redirects, so a redirect surfaces as a clean non-success status instead of being
+  chased off-allowlist. Added a wire-level regression test (mock 302 → `Location` to a dead off-host
+  port; asserts the client fails clean with `HTTP 302` and never requests the redirect target).
+
+## v1.12.0 — Proxmox read-only integration (NORTH_STAR Phase 8)
+
+Phase 8 of the master roadmap: ANTHILL connects to Proxmox safely, in read-only mode. There is no
+start/stop/reboot/migrate/delete/clone/resize/config-write path anywhere in this integration.
+
+- **GET-only `ProxmoxApiClient`** — write operations are *structurally impossible*: the class has
+  no POST/PUT/DELETE code at all. Proven twice in tests: the public type surface exposes only
+  `Get*` methods, and a mock PVE server asserts every wire request is a GET. Allowlist check (D1)
+  and credential lookup happen before any request; strict per-request timeout; TLS verification is
+  config-controlled (`homelab_proxmox_insecure_tls` for self-signed homelab certs, default verify).
+- **`ProxmoxInventoryProvider`** (riding the shared scheduler as `proxmox-sync`): syncs nodes (as
+  `hypervisor` hosts tagged `proxmox` with status/CPU/RAM/uptime), QEMU VMs (vmid, status, vCPU,
+  RAM, uptime), LXC containers, storage pools (with backup-capable flagging + used/total bytes),
+  and failed Proxmox tasks — recorded as `proxmox_task_failed` events with stable UPID ids so
+  re-syncs never duplicate (RecordEvent is now INSERT OR IGNORE). All upserts use stable ids —
+  re-sync is idempotent.
+- **`ProxmoxHealthProvider`**: GET /version reachability check for the health system.
+- **Credentials**: the API token lives in the homelab credential store
+  (`homelab_proxmox_credential_id`, default `proxmox-main`; save as `user@realm!tokenid=SECRET`),
+  is fetched per sync with an audited use, flows only into the PVE Authorization header, and is
+  proven absent from events, changes, inventory, statuses, and export bundles. A read-only
+  PVEAuditor token is all it needs — matching the integration's own permissions.
+- **Repository**: `UpsertVm/ListVms`, `UpsertContainer/ListContainers`,
+  `UpsertStoragePool/ListStoragePools` fill the v1.9.0 `vm_inventory`, `container_inventory`, and
+  `storage_inventory` tables for the first time.
+- **API**: `GET /homelab/vms`, `GET /homelab/containers`, `GET /homelab/storage`,
+  `GET /homelab/proxmox/status` (secret-free), `POST /homelab/proxmox/sync` (manage-gated run-now).
+- **UI**: Virtualization section on the Homelab page — Proxmox status card with setup hints and
+  Sync Now, VM/container tables with running-state coloring, storage pools with usage-percent
+  coloring (green/amber/red at 75/90%).
+- **Config**: `homelab_proxmox_enabled` (off), `homelab_proxmox_host`, `homelab_proxmox_port`,
+  `homelab_proxmox_credential_id`, `homelab_proxmox_insecure_tls`,
+  `homelab_proxmox_sync_interval_seconds` — all operator-editable and in the settings snapshot.
+- **Tests** (`ProxmoxIntegrationTests`, mock PVE API on loopback): no-write type-surface + wire
+  proofs, allowlist blocks with zero requests, missing-credential clean failure, full sync
+  population, idempotent re-sync, HTTP-500 soft failure, hung-server timeout bound, credential
+  redaction sweep, and health-provider healthy/failed paths.
+- Deferred to V2.2 (backup intelligence): per-VM snapshot detail and deep backup inspection.
+
+## v1.11.0.2 — Replace blocking native dialogs with an in-app modal
+
+Fix: the console used native `window.confirm()`/`prompt()` for every destructive action (Stop the
+Director, reject/apply patches, flush cache, reset settings, delete objectives/users, restart the
+service, prune pheromones, etc.). Native dialogs **block the renderer's main thread** until
+dismissed — which is what hung the Autonomy **Stop** button (the click froze the page until the
+modal was cleared), and they also look out of place in the custom HUD and break automated testing.
+
+- New promise-based `uiConfirm()` / `uiPrompt()` — themed, non-blocking, keyboard-navigable
+  (Enter = confirm, Esc / backdrop = cancel), with an optional danger style for destructive actions.
+- All 18 native `confirm()`/`prompt()` call sites migrated (handlers made `async` where needed).
+  Behavior is unchanged (default is still cancel); only the blocking + styling changed.
+
+## v1.11.0.1 — Auto-apply observability + auth-redirect hardening
+
+Two fixes surfaced while live-verifying the autonomous auto-apply → git loop end-to-end on the LXC
+(the loop itself works: a verified patch applied, committed to the standalone `<username>-anthill`
+branch, synced origin/main into it, and pushed — never touching main).
+
+- **Auto-apply git step is now logged.** Previously only the *failure* path emitted an event, so a
+  successful commit/push was invisible in the Event Log — from the UI it looked like the loop applied
+  and verified but never committed (it had). `AutoApplyRunner` now emits
+  `autonomy_autoapply_committed` on success, naming the commit sha, branch, files, and push result
+  (`pushed to <remote>/<branch>` / `push failed …` / `push disabled`), so the git step is visible and
+  searchable.
+- **UI reliably bounces to login on a 401.** `onUnauthorized` early-returned after the first 401, so
+  if a session went invalid mid-flight (e.g. the server rotating its session secret during a
+  redeploy) the console could stay stuck half-loaded behind failing background polls instead of
+  redirecting. It now re-asserts the login screen on any 401 while the app shell is still visible,
+  without re-running once already on login.
+
 ## v1.11.0 — Health checks + notifications (NORTH_STAR Phase 7)
 
 Phase 7 of the master roadmap: ANTHILL can tell what is alive, degraded, or broken. Awareness and
@@ -1413,265 +1646,4 @@ Added:
   `PrivateTmp`, `ProtectSystem=strict`, scoped `ReadWritePaths`), plus `Environment=ANTHILL_HOME`
   for unambiguous workspace resolution and a generated `/etc/anthill/token.env` for an optional
   static API token.
-- No special LXC features (nesting, privileged mode) are required — this is a plain systemd
-  service, not Docker-in-LXC, so `NetworkUtil`'s auto-detected reachable IP works with zero extra
-  networking config (LXC containers get a real interface directly, unlike Docker's bridge
-  default).
-- **README**: new "Option E — LXC" under Deploy on Linux, quick-start + pointer to the full guide.
-- **`docs/DEPLOYMENT.md`**: §3 filled in — creating the container (Proxmox `pct` commands +
-  generic LXD/incus note), installing, upgrading, customizing install location/service user,
-  uninstalling. Roadmap table updated (LXC done, Windows Service next).
-- **CI**: new `lint-lxc-installer` job — `shellcheck` (GitHub-hosted runners have it preinstalled)
-  plus a `bash -n` syntax check on `deploy/lxc/setup.sh`.
-- **Releases** (`.github/workflows/release.yml`, added after this version shipped): triggered by
-  pushing a `vX.Y.Z` tag. A `verify-version` job fails loudly if the tag doesn't match
-  `AnthillRuntime.Version` in the tagged commit, guarding against tagging before a version bump
-  actually landed. Builds self-contained `linux-x64`/`win-x64` binaries and a versioned Docker
-  image pushed to `ghcr.io/thexonexone/operation-anthill`, then opens a **draft** GitHub Release
-  (never auto-published) with notes pulled from the matching `## vX.Y.Z` CHANGELOG section and
-  the binaries/image attached. Also fixed the stray `YOUR_ORG`/`anthill-dotnet` placeholder repo
-  references across `README.md` to the real `thexonexone/operation-anthill` URL and directory
-  name. See [docs/DEPLOYMENT.md §4](docs/DEPLOYMENT.md#4-releases).
-
-Validation:
-
-- `bash -n deploy/lxc/setup.sh` passes (checked manually — no shellcheck available in the
-  authoring environment, hence the new CI job to actually run it). Not run against a real LXC
-  container; no LXC/Proxmox host available in the environment this was authored in. Try it on an
-  actual container before trusting it in production, and watch the first CI run for the new
-  shellcheck job.
-
-## v1.8.6 — Container-style deployment: Docker, all-interfaces binding, env var config
-
-No schema change. First step of ongoing work to make ANTHILL deployable like a normal home-lab
-appliance — standalone Docker container today, LXC and Windows Service to follow (see
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
-
-Added:
-
-- **Docker packaging** — `Dockerfile` (multi-stage: SDK build stage, framework-dependent publish
-  onto the `aspnet:9.0` runtime image, non-root user, unauthenticated `/health`-backed
-  `HEALTHCHECK`), `docker-compose.yml` (defaults to `network_mode: host` on Linux so the
-  container is reachable at the host's real LAN IP, with a bridge-mode alternative documented for
-  Windows/macOS Docker Desktop), and `.dockerignore`. No config file or token required to start —
-  ANTHILL self-seeds a container-safe default `config.json` into the mounted `.anthill` volume on
-  first boot.
-- **All-interfaces binding by default** — `api_host` now defaults to `0.0.0.0` (was `127.0.0.1`)
-  in both `AnthillConfig`'s default and every safety profile's forced override. The operator login
-  was already the real security boundary (auth is forced on in every profile regardless of bind
-  host), so this changes what a fresh container/LXC/service install looks like on first boot, not
-  the actual security posture. Set `api_host` to `127.0.0.1` (or `ANTHILL_HOST=127.0.0.1`)
-  explicitly for a localhost-only install.
-- **`ANTHILL_HOST` / `ANTHILL_PORT` / `ANTHILL_OLLAMA_HOST` / `ANTHILL_OLLAMA_MODEL` env vars** —
-  new highest-precedence overrides (win over `config.json`) in `AnthillRuntime.ProjectConfig`,
-  so container/LXC/service deployments can be configured entirely from the outside. This also
-  fixes a latent bug: the CLI's `--host`/`--port`/`--ollama-host`/`--ollama-model` flags
-  previously wrote a static field that `AnthillRuntime.Initialize()` immediately overwrote from
-  `config.json` a moment later inside `ApiHost.Run()`, silently ignoring the flags; they now set
-  these same env vars instead, which survive.
-- **`NetworkUtil.GetLikelyLanIPv4()`** (`Anthill.Core/Common/NetworkUtil.cs`) — cross-platform,
-  no-network-traffic LAN IP auto-detection (local UDP "connect", no packet sent), used to print a
-  real, clickable URL in the startup console banner and in `GET /status` (`reachable_ip` field)
-  instead of the unusable `0.0.0.0` bind address, on both Linux and Windows.
-- **Config hygiene**: `config.example.json` had a trailing comma making it invalid JSON — copying
-  it verbatim per the documented Quick Start steps would silently fall back to all-default config
-  with just a console warning easy to miss in a container. Fixed, and added the three Phase 2
-  Strategist knobs (`autonomy_dedupe_similarity`, `autonomy_max_followups_per_run`,
-  `autonomy_max_objective_depth`) that were missing from the example file.
-- **`Anthill.sln` fix**: the solution file only registered `Anthill.Tests`; `Anthill.Cli`,
-  `Anthill.Api`, and `Anthill.Core` were never top-level entries, so `dotnet build Anthill.sln`
-  (as documented in the README) silently never built the actual CLI/API projects — only
-  `build.sh`/`build.ps1`'s explicit direct-publish step did. Added all three so the documented
-  build/IDE-open workflow matches what actually ships.
-- **README**: Docker section expanded to include the full `docker-compose.yml` walkthrough (field
-  table, bridge-mode alternative for Windows/macOS Docker Desktop, plain `docker build`/`docker
-  run` commands, Dockerfile summary, upgrade steps) instead of just pointing at
-  `docs/DEPLOYMENT.md`; Security Model table gained a network-binding row; Windows Service section
-  flagged as pending proper SCM integration (planned next, see `docs/DEPLOYMENT.md` §4); CI badge
-  added.
-- **CI** (`.github/workflows/ci.yml`, previously an empty placeholder): now runs on every push/PR
-  to `main` (and manually via `workflow_dispatch`) — `dotnet build`/`dotnet test` on Linux and
-  Windows, a self-contained `linux-x64` publish + `--selftest` run, and a Docker build + container
-  boot smoke test that polls the `HEALTHCHECK` status and hits `GET /health` directly. This is the
-  actual "does this work" signal going forward, since neither a .NET SDK nor a Docker daemon is
-  available in the environment these changes were authored in.
-
-Validation:
-
-- Manual review only — no `dotnet` SDK or Docker daemon was available in the environment this
-  change was authored in, so `docker build`/`docker compose up` and `dotnet build`/`dotnet test`
-  have **not** been run against this change. Brace/paren balance checked by hand on every edited
-  `.cs` file; `config.example.json` re-validated as parseable JSON. Run `dotnet build && dotnet
-  test`, then `docker compose up -d --build` and confirm the console banner prints a real LAN IP,
-  before relying on this in production.
-
-## v1.8.5 — Autonomy Phase 2: Strategist
-
-No schema change. Mission goals for the 24/7 Colony Director are now LLM-generated per objective
-instead of charter-as-goal, with dedup against recent mission history and capped self-enqueued
-follow-up objectives. See [docs/AUTONOMY.md](docs/AUTONOMY.md) for the full design.
-
-Added:
-
-- **`Anthill.Core.Autonomy.Strategist`** — turns an objective + recent `autonomy_runs` history +
-  top pheromone trails into a concrete mission goal via a new `strategist` model-router role.
-  Always computes the deterministic charter-as-goal fallback first; any router failure, missing
-  router, or unparseable response falls back to it — never blocks or throws. `StrategistResult`
-  reports `Source` (`"strategist"` or `"fallback"`) for auditability.
-- **Dedup** — rejects a generated goal that's a near-duplicate of a recent completed/partial run
-  for the same objective (`TextUtil.ExtractKeywords` containment-ratio overlap, threshold
-  `autonomy_dedupe_similarity`, default `0.8`); a rejected goal falls back to the charter goal.
-- **Follow-up objectives** — the Strategist can propose follow-ups in its JSON response;
-  `ColonyDirector` saves them only after a successful mission, capped by
-  `autonomy_max_followups_per_run` (default `1`) and `autonomy_max_objective_depth` (default `3`,
-  walked via new `SqliteMemory.ObjectiveDepth`). Follow-ups inherit `ParentObjectiveId` and run at
-  `Priority - 1`.
-- **New config knobs** (all fail-closed): `autonomy_dedupe_similarity`,
-  `autonomy_max_followups_per_run`, `autonomy_max_objective_depth`.
-- **`ColonyDirector.RunObjectiveOnce`** rewritten to call `Strategist.GenerateGoal`; logs
-  `goal_source`/`strategist_notes` on `autonomy_mission_started` and `follow_ups_created` on
-  `autonomy_mission_finished`. Writes remain queue-only — the Strategist only chooses the next
-  mission, never applies patches.
-- **UI: Autonomy page** *(admin only)* — Director status card (start/stop, budgets, kill switch),
-  objectives backlog editor (add/pause-resume/reprioritize/delete), and a recent-runs table
-  showing goal source and outcome per run.
-
-Validation:
-
-- Offline `StrategistTests` cover the no-router fallback path (never blocks/throws) and
-  `ObjectiveDepth` walking/edge cases. The LLM-driven generation/dedup paths require a live
-  provider and aren't testable offline.
-- Manual review only — no `dotnet` SDK was available in the environment this change was authored
-  in, so this release has **not** been compiled or run. Run `dotnet build`/`dotnet test`, then
-  exercise the Autonomy page end-to-end (add an objective, start the Director, confirm a run
-  appears with a goal source) before shipping.
-
-## v1.8.4 — Model provider connections
-
-Schema bumped to **v10** (new `provider_credentials` table, migration `model_provider_connections`).
-Ants can now be routed to paid cloud model providers — OpenAI (ChatGPT), Anthropic (Claude),
-Perplexity, and OpenRouter — alongside free local Ollama, with API keys managed from the console.
-
-Added:
-
-- **`provider_credentials` table** — one row per external provider. The API key is sealed at rest
-  with the existing AES-256-GCM `FieldCipher` (same key resolution as other encrypted columns:
-  `ANTHILL_ENCRYPTION_KEY` env var, else an auto-generated 0600 workspace key file) and is never
-  read back over the API; only a `configured` boolean, `enabled` flag, optional base-URL override,
-  and last-verification status are ever exposed.
-- **Real provider clients** (`Anthill.Core.Models.ProviderClients`) — `OpenAiCompatibleClient`
-  (shared by OpenAI, Perplexity, and OpenRouter, which all speak the same `{model, messages}` →
-  `choices[0].message.content` contract) and `AnthropicClient` (Messages API, `x-api-key` header,
-  `content[]` block array). Both fail closed with `ERROR:` sentinel strings on missing keys,
-  auth failures, timeouts, or transport errors, matching `OllamaClient`'s existing contract so the
-  rest of the colony (retries, pheromone scoring, event logging) needs no changes.
-- **`ProviderCatalog`** — static metadata (display name, free/paid kind, curated model list, key
-  help URL, default endpoint) for every known provider, driving both the API's `/providers/catalog`
-  response and the console's dropdowns.
-- **`ModelRouter` keyed-client routing** — OpenAI/Anthropic/Perplexity/OpenRouter clients are built
-  fresh on every call (not cached like Ollama's) so a rotated or removed key takes effect
-  immediately without a process restart.
-- **New endpoints**: `GET /providers/catalog`, `GET /providers`, `POST /providers` (upsert — a
-  blank `api_key` on update leaves the stored key untouched), `DELETE /providers/{provider}`,
-  `POST /providers/{provider}/test` (fires one live probe call through the real routing path and
-  records the verification result). Gated by two new permissions, `read_providers` and
-  `manage_providers`, both admin-only like `manage_settings`/`manage_users`.
-- **Settings → Providers tab** — a card per provider with API-key input, optional base-URL
-  override, Save / Test Connection / Remove actions, and a status pill (not connected / connected /
-  verified / verification failed).
-- **Ant Config provider + model routing** — each caste's model route editor now has a Provider
-  selector (Ollama or any connected external provider) in addition to the existing model picker;
-  saving writes `{provider, model}` into `model_routes` exactly as before.
-
-Validation:
-
-- Manual review only — no `dotnet` SDK was available in the environment this change was authored
-  in, so this release has **not** been compiled or run. Run `dotnet build` and exercise
-  `POST /providers`, `POST /providers/{provider}/test`, and an Ant Config route change before
-  shipping.
-
-## v1.8.3 — Enterprise shell UI
-
-No schema change. The web console is rebuilt as a full enterprise-grade shell; all existing API
-endpoints, auth, and backend behaviour are unchanged.
-
-Added:
-
-- **Left navigation rail** — 240 px expanded / 60 px icon-only collapsed, toggled by the **‹**
-  button; collapse state persisted in `localStorage`. Eight nav items with icons: Overview, Colony,
-  Missions, Event Log, Pheromones, Ant Config, Settings, Users.
-- **8 routed pages** — `showPage(id)` swaps the active page, updates the nav active state, updates
-  the header title, and fires a per-page `PAGE_ENTER` callback. All former modal overlays are now
-  full pages:
-
-  | Page | Replaces |
-  |------|---------|
-  | **Overview** | *(new)* — KPI grid, mission dispatch, recent jobs, live event feed |
-  | **Colony** | Canvas page (unchanged layout; canvas now fills `#colony-canvas-area`) |
-  | **Missions** | *(new)* — dedicated dispatch + full job history |
-  | **Event Log** | `log-modal` overlay |
-  | **Pheromones** | `phero-modal` overlay |
-  | **Ant Config** | `antcfg-modal` overlay |
-  | **Settings** | `settings-overlay` |
-  | **Users** | `users-modal` overlay |
-
-- **Fixed top header (50 px)** containing: page title (left), active mission goal + status dot
-  (centre), model badge / connection badge / approval bell / logout button (right). The approval
-  bell is always visible regardless of active page; clicking it navigates to Colony and scrolls
-  to the Approvals card.
-- **KPI cards on Overview** — Model Calls, Tasks Done, Events, Approvals; updated by the same
-  `pollStatus()` that drives the Colony sidebar (both sets of stat elements are kept in sync).
-- **Three mission dispatch inputs** — Colony canvas bar (`mission-input`), Missions page
-  (`ms-mission-input`), Overview page (`ov-mission-input`); all feed the same `dispatchMission()`
-  function and `enableInput()` locks/unlocks all three simultaneously.
-- **Canvas mouse coordinate fix** — `mousedown`, `mousemove`, `mouseup`, `dblclick`, and `wheel`
-  handlers now derive canvas-local coordinates via `canvas.getBoundingClientRect()` instead of the
-  former `e.clientY - 50` hardcode. Hit-testing and zoom-pivot are accurate at every zoom level and
-  nav-rail state.
-- **Canvas resize fix** — `resize()` reads from `document.getElementById('colony-canvas-area')`
-  (the flex container) instead of the former `#cw` element, so the canvas fills its area exactly
-  regardless of sidebar widths.
-- **Keyboard shortcuts** — `Ctrl+K` focuses the mission input on Colony; `Ctrl+L` navigates to
-  Event Log; `Escape` closes the result overlay and rename popover.
-- **`ov-jobs-list` / `ov-feed-list`** — the Overview page renders job lists and the live event
-  feed (capped at 20 entries) from the same poll functions (`pollJobs`, `pollEvents`) that drive
-  the Colony sidebar; no additional polling.
-- **Card collapse** — every card in the Colony sidebars has a **▾** toggle; collapsed state is
-  persisted in `localStorage` keyed by card id.
-- **Result overlay** — position-fixed over the entire shell, shown when viewing a job result;
-  includes Copy, Refresh, and Close controls.
-
-Changed:
-
-- All event IDs and API calls are **unchanged** — only the surrounding layout changed.
-- `pollJobs()` now renders to three containers: `jobs-list` (colony left), `ov-jobs-list`
-  (overview), `ms-jobs-list` (missions page).
-- `pollEvents()` renders to `feed-list` (colony right) and `ov-feed-list` (overview, capped at 20).
-- `pollStatus()` updates both `s-calls/tasks/events/approvals` (colony) and the `ov-*` equivalents.
-- `applyRoleVisibility()` now also hides/shows nav items and the approval bell per role, not just
-  page-level controls.
-
-Validation:
-
-- ID audit: all 143 required element IDs verified present in the final `index.html` (automated
-  check with PowerShell regex pass).
-- JS balance: brace count delta = 0; backtick count even (no unclosed template literals).
-- No unreplaced CSS/JS/HTML placeholder markers; single `<style>` and `<script>` block.
-- All original API endpoints and auth flow verified unchanged (no backend edits in this release).
-
-## v1.8.2 — Live colony console + operator accounts
-
-Schema bumped to **v9**. The web console becomes a fully operable control plane, and the shared
-API token is replaced by real password-based operator accounts with roles.
-
-Added:
-
-- **Operator accounts + roles (replaces token-only web auth)**: the console is now secured by
-  password login, not a shared API key. First run shows a one-time setup screen that creates the
-  initial **administrator**; thereafter everyone signs in with a username/password and receives an
-  in-memory **session** (12-hour sliding expiry, dropped on restart). Two roles:
-  - **Administrator** — full control, including user management.
-  - **Mission Coordinator** — may *only* send missions to the Queen and read the event logs (plus
-    live status to watch them); everything else is denied at the API and hidden in the UI.
-
-  Passwords are salted
+- No special LXC features 

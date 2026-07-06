@@ -14,7 +14,7 @@ namespace Anthill.Core.Configuration;
 /// </summary>
 public static class AnthillRuntime
 {
-    public const string Version = "1.11.0";
+    public const string Version = "2.0.0";
     public const int SchemaVersion = 11;
     public const string DefaultWorkspace = ".anthill";
     public const string DefaultConfigFile = "config.json";
@@ -145,6 +145,22 @@ public static class AnthillRuntime
     public static string HomelabSlackWebhook = "";
     public static string HomelabDiscordWebhook = "";
     public static string HomelabGenericWebhook = "";
+    // ---- Proxmox read-only integration (v1.12.0, NORTH_STAR Phase 8) -------
+    /// <summary>Gate for the Proxmox read-only sync. GET-only by construction; off by default.</summary>
+    public static bool EnableHomelabProxmox = false;
+    public static string HomelabProxmoxHost = "";
+    public static int HomelabProxmoxPort = 8006;
+    /// <summary>Credential-store id holding the PVE API token ("user@realm!tokenid=secret"). Never the token itself.</summary>
+    public static string HomelabProxmoxCredentialId = "proxmox-main";
+    /// <summary>Skip TLS verification for self-signed PVE certs. Keep false when real certs exist.</summary>
+    public static bool HomelabProxmoxInsecureTls = false;
+    public static int HomelabProxmoxSyncIntervalSeconds = 300;
+    // ---- Network + security awareness (v1.13.0, NORTH_STAR Phase 9) --------
+    /// <summary>Cadence of the deterministic risk analysis (repo-only, zero network I/O).</summary>
+    public static int HomelabRiskIntervalSeconds = 3600;
+    // ---- Incident + change memory (v1.14.0, NORTH_STAR Phase 10) -----------
+    /// <summary>Cadence of the incident sweep (candidate events → deduped incidents; repo-only).</summary>
+    public static int HomelabIncidentSweepSeconds = 300;
     // ---- Phase 2: Strategist (self-generated missions) --------------------
     /// <summary>Keyword-overlap ratio (0..1) above which a generated goal is rejected as a near-duplicate of recent work.</summary>
     public static double AutonomyDedupeSimilarity = 0.8;
@@ -468,6 +484,14 @@ public static class AnthillRuntime
         HomelabSlackWebhook = (config.HomelabSlackWebhook ?? "").Trim();
         HomelabDiscordWebhook = (config.HomelabDiscordWebhook ?? "").Trim();
         HomelabGenericWebhook = (config.HomelabGenericWebhook ?? "").Trim();
+        EnableHomelabProxmox = config.HomelabProxmoxEnabled;
+        HomelabProxmoxHost = (config.HomelabProxmoxHost ?? "").Trim();
+        HomelabProxmoxPort = Math.Clamp(config.HomelabProxmoxPort, 1, 65535);
+        HomelabProxmoxCredentialId = string.IsNullOrWhiteSpace(config.HomelabProxmoxCredentialId) ? "proxmox-main" : config.HomelabProxmoxCredentialId.Trim();
+        HomelabProxmoxInsecureTls = config.HomelabProxmoxInsecureTls;
+        HomelabProxmoxSyncIntervalSeconds = Math.Clamp(config.HomelabProxmoxSyncIntervalSeconds, 30, 86400);
+        HomelabRiskIntervalSeconds = Math.Clamp(config.HomelabRiskIntervalSeconds, 60, 86400);
+        HomelabIncidentSweepSeconds = Math.Clamp(config.HomelabIncidentSweepSeconds, 30, 86400);
         AutonomyPollSeconds = Math.Clamp(config.AutonomyPollSeconds, 5, 3600);
         AutonomyMaxMissionsPerHour = Math.Max(1, config.AutonomyMaxMissionsPerHour);
         AutonomyMaxMissionsPerDay = Math.Max(1, config.AutonomyMaxMissionsPerDay);
@@ -548,6 +572,10 @@ public static class AnthillRuntime
         "homelab_health_interval_seconds", "homelab_health_timeout_ms",
         "homelab_notifications_enabled", "homelab_slack_webhook", "homelab_discord_webhook",
         "homelab_generic_webhook",
+        "homelab_proxmox_enabled", "homelab_proxmox_host", "homelab_proxmox_port",
+        "homelab_proxmox_credential_id", "homelab_proxmox_insecure_tls",
+        "homelab_proxmox_sync_interval_seconds",
+        "homelab_risk_interval_seconds", "homelab_incident_sweep_seconds",
         "autonomy_autoapply_enabled", "autonomy_autoapply_paths", "autonomy_autoapply_max_lines",
         "autonomy_autoapply_verify_cmd", "autonomy_autoapply_verify_timeout", "autonomy_autoapply_git_commit",
         "autonomy_autoapply_git_push", "autonomy_autoapply_git_remote", "autonomy_autoapply_git_username",
@@ -641,6 +669,14 @@ public static class AnthillRuntime
         ["homelab_slack_webhook"] = HomelabSlackWebhook,
         ["homelab_discord_webhook"] = HomelabDiscordWebhook,
         ["homelab_generic_webhook"] = HomelabGenericWebhook,
+        ["homelab_proxmox_enabled"] = EnableHomelabProxmox,
+        ["homelab_proxmox_host"] = HomelabProxmoxHost,
+        ["homelab_proxmox_port"] = HomelabProxmoxPort,
+        ["homelab_proxmox_credential_id"] = HomelabProxmoxCredentialId,
+        ["homelab_proxmox_insecure_tls"] = HomelabProxmoxInsecureTls,
+        ["homelab_proxmox_sync_interval_seconds"] = HomelabProxmoxSyncIntervalSeconds,
+        ["homelab_risk_interval_seconds"] = HomelabRiskIntervalSeconds,
+        ["homelab_incident_sweep_seconds"] = HomelabIncidentSweepSeconds,
         ["file_writing_enabled"] = EnableFileWriting,
         ["shell_tool_enabled"] = EnableShellTool,
         ["operator_shell_enabled"] = EnableOperatorShell,

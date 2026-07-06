@@ -73,6 +73,28 @@ public interface IHomelabRepository : IHomelabEventSink
     IReadOnlyList<HomelabNode> ListNodes();
     void UpsertService(ServiceRecord service, string changedBy);
     IReadOnlyList<ServiceRecord> ListServices();
+
+    // Virtualization + storage inventory (v1.12.0, filled by the Proxmox read-only sync)
+    void UpsertVm(VmRecord vm);
+    IReadOnlyList<VmRecord> ListVms();
+    void UpsertContainer(ContainerRecord container);
+    IReadOnlyList<ContainerRecord> ListContainers();
+    void UpsertStoragePool(StoragePoolRecord pool);
+    IReadOnlyList<StoragePoolRecord> ListStoragePools();
+
+    // Network devices + risk findings (v1.13.0, NORTH_STAR Phase 9 — awareness only, no scanning)
+    void UpsertNetworkDevice(NetworkDevice device, string changedBy);
+    void RemoveNetworkDevice(string id, string removedBy);
+    IReadOnlyList<NetworkDevice> ListNetworkDevices();
+    void UpsertRiskRecord(RiskRecord record);
+    void SetRiskStatus(string id, string status, string changedBy);
+    IReadOnlyList<RiskRecord> ListRiskRecords();
+
+    // Incident + change memory (v1.14.0, NORTH_STAR Phase 10)
+    void OpenIncident(IncidentRecord incident, string openedBy);
+    IncidentRecord? GetIncident(string id);
+    void SetIncidentStatus(string id, string status, string rootCause, string changedBy);
+    IReadOnlyList<IncidentRecord> ListIncidents();
     IReadOnlyList<HomelabEvent> RecentEvents(int limit = 50);
     void RecordChange(ChangeRecord change);
     IReadOnlyList<ChangeRecord> RecentChanges(int limit = 50);

@@ -177,10 +177,10 @@ V1.9.0   Homelab foundation: models, folders, tables, target guard, credentials,
 V1.9.1   Homelab scheduler skeleton and mock-provider harness  [SHIPPED v1.9.1]
 V1.10.0  Inventory and service registry                       [SHIPPED v1.10.0]
 V1.11.0  Health checks and notifications                      [SHIPPED v1.11.0]
-V1.12.0  Proxmox read-only integration
-V1.13.0  Network and security awareness
-V1.14.0  Incident and change memory + IApprovable design
-V2.0.0   Homelab Command Center launch
+V1.12.0  Proxmox read-only integration                        [SHIPPED v1.12.0]
+V1.13.0  Network and security awareness                       [SHIPPED v1.13.0]
+V1.14.0  Incident and change memory + IApprovable design      [SHIPPED v1.14.0 — V1.x line complete]
+V2.0.0   Homelab Command Center launch                        [SHIPPED v2.0.0]
 V2.1.0   Approval-gated homelab actions
 V2.2.0   Backup and restore intelligence
 V2.3.0   Automation rules
@@ -419,6 +419,14 @@ health classification; mock HTTP/TCP; timeout; notification; UI smoke.
 
 # PHASE 8 — V1.12.0 PROXMOX READ-ONLY INTEGRATION
 
+**Status: SHIPPED in v1.12.0** — GET-only `ProxmoxApiClient` (write operations structurally
+impossible; proven by type-surface and wire-traffic tests), `ProxmoxInventoryProvider` (nodes,
+QEMU VMs, LXCs, storage incl. backup-capable pools, failed tasks as stable-id events) +
+`ProxmoxHealthProvider` on the shared scheduler, credential-store + target-allowlist discipline,
+`/homelab/vms|containers|storage|proxmox/*` endpoints, Virtualization panels on the Homelab page,
+and `ProxmoxIntegrationTests` against a mock PVE API. Per-VM snapshot detail and deep backup
+inspection are deferred to V2.2 (backup intelligence).
+
 ## Goal
 Connect ANTHILL to Proxmox safely in read-only mode. No start/stop/reboot/migrate/delete/clone/resize/config writes.
 
@@ -434,6 +442,12 @@ mock Proxmox API; config validation; no-write permission; credential redaction; 
 ---
 
 # PHASE 9 — V1.13.0 NETWORK + SECURITY AWARENESS
+
+**Status: SHIPPED in v1.13.0** — `RiskAnalyzer` with all nine finding kinds and stable-id
+reconciliation (auto-resolve on fix, sticky acknowledgements), the manual/import network-device
+registry (in the export bundle), the `risk-analysis` shared-scheduler job, `/homelab/devices` +
+`/homelab/risks` endpoints, Network & Risk console panels, and socket-free `RiskAwarenessTests`.
+No active scanning exists; the phase is zero-network-I/O by construction.
 
 ## Goal
 Understand the network shape and obvious risks. Awareness/reporting only; no firewall/DNS/DHCP writes.
@@ -451,6 +465,14 @@ finding generation; duplicate IP; exposure classification; allowlist; UI smoke.
 
 # PHASE 10 — V1.14.0 INCIDENT + CHANGE MEMORY
 
+**Status: SHIPPED in v1.14.0 — the V1.x line is complete.** `IncidentManager` (candidate sweep
+with per-subject dedupe, suspect-flagged timelines, similar-incident matching with verbatim fix
+memory, repeat-offender patterns), `/homelab/incidents/*` endpoints, the Incidents console panel
+with timeline drawer, and the full IApprovable design: interface + `ApprovableView`, the unified
+`GET /homelab/approvals/unified` queue projecting today's patch approvals, the inert V2.1
+`ActionProposal` skeleton with blast-radius rubric fields, and `docs/APPROVALS.md` binding V2.1's
+executor to five safety requirements. Next: PHASE 11 — the V2.0.0 Homelab Command Center.
+
 ## Goal
 Connect failures to recent changes and past fixes. Incident tracking, timelines, recommendations only. No auto-fixes.
 
@@ -466,6 +488,14 @@ incident timeline; similar incident; memory search integration; UI smoke; IAppro
 ---
 
 # PHASE 11 — V2.0.0 HOMELAB COMMAND CENTER LAUNCH
+
+**Status: SHIPPED in v2.0.0** (two passes: functional data layer, then the ANTHILL identity
+layer). `CommandCenter` builder + `GET /homelab/dashboard` aggregation, impact-propagating
+dependency graph with transitive dependents, host/service detail drawers, deterministic
+next-checks, semantic subsystem tokens, colony-mesh background, command summary strip with
+data-derived colony-link pulse, connection cues, reduced-motion support, labeled empty states,
+and `CommandCenterTests`. The console answers all eight questions below. Next: PHASE 12 —
+approval-gated actions (V2.1.0), building on the shipped IApprovable design.
 
 ## Goal
 Turn V1 backend foundations into the main homelab dashboard. Mostly read-only — visibility, not full control.
