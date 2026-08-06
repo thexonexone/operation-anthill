@@ -31,3 +31,9 @@ global using Anthill.SDK.Actions;
 // Anthill.Core may not, and its own tests never load it.
 global using Anthill.Modules.Homelab;
 global using Anthill.Core.Security;
+
+// v3.8.9 — Capability, FailureClass, FailureClassify, ToolDescriptor and ToolCatalog moved to
+// Anthill.SDK.Contracts. TaskContract, ContractGate and Contracts.ToolResult stayed in the core:
+// the first two take Domain.Task, and the third collides by name with Domain.ToolResult, which
+// call sites disambiguate against by namespace.
+global using Anthill.SDK.Contracts;

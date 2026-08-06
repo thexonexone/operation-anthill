@@ -135,25 +135,25 @@ public sealed class ToolResult
     /// validation failure means fix the arguments and call the same tool. A bool cannot say which,
     /// so the loop either treats every failure identically or starts matching on error strings.
     /// </summary>
-    public Contracts.FailureClass Failure { get; set; } = Contracts.FailureClass.None;
+    public FailureClass Failure { get; set; } = FailureClass.None;
 
     /// <summary>
     /// Whether the identical call could plausibly succeed if repeated. DERIVED from
     /// <see cref="Failure"/> rather than stored, so the two can never contradict each other, and
     /// there is one definition of retryable in the codebase rather than two that drift.
     /// </summary>
-    public bool Retryable => Contracts.FailureClassify.IsRetryable(Failure);
+    public bool Retryable => FailureClassify.IsRetryable(Failure);
 
     public ToolResult() { }
     public ToolResult(string toolName, bool success, string output, string? error = null,
-        Contracts.FailureClass failure = Contracts.FailureClass.None)
+        FailureClass failure = FailureClass.None)
     {
         ToolName = toolName; Success = success; Output = output; Error = error;
         // A failure that names no class is an InternalDefect, not an unclassified mystery: the tool
         // failed and did not say why, which is a defect in the tool. Leaving it None would make
         // "succeeded" and "failed for unstated reasons" the same value.
-        Failure = failure != Contracts.FailureClass.None ? failure
-            : success ? Contracts.FailureClass.None : Contracts.FailureClass.InternalDefect;
+        Failure = failure != FailureClass.None ? failure
+            : success ? FailureClass.None : FailureClass.InternalDefect;
     }
 }
 

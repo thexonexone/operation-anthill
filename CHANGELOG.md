@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v3.8.9 - Half the contract vocabulary joins the SDK
+
+Phase 5a of the Core/Modules split (`docs/REFACTOR-PLAN.md`), on the second attempt — and the
+correction is the interesting part.
+
+- **`Capability`, `FailureClass`, `FailureClassify`, `ToolDescriptor` and `ToolCatalog` move to
+  `Anthill.SDK.Contracts`.** Genuinely shared vocabulary: what a capability is, how a failure is
+  classified, what a tool declares about itself. Nothing in them knows what a mission or a task is.
+- **`TaskContract`, `ContractGate` and `Contracts.ToolResult` stayed in the core**, and the first
+  attempt moved them anyway. `TaskContract.FromTask` takes `Domain.Task` and reaches
+  `Agents.AntRegistry`; `ContractGate.Admit` takes `List<Domain.Task>`. All of it through PARTIAL
+  qualification — `Domain.Task`, not `Anthill.Core.Domain.Task` — which resolves through the
+  enclosing namespace and leaves no `using` statement to notice. A purity check that reads imports
+  sees a dependency-free file. It is not one.
+- **`ToolResult` stayed for a different reason.** `Anthill.Core.Domain` declares a DIFFERENT type of
+  the same name, and call sites disambiguate with `Contracts.ToolResult`. `ToolFailureClassTests`
+  has a comment explaining exactly this. Moving it turns every one of those call sites into an
+  ambiguity error that reads as unrelated.
+- The lesson, recorded in the file header so the next attempt does not repeat it: **a file is only
+  as movable as its most qualified reference**, and `grep` for `using` will not find them.
+
+
 ## v3.8.8 - The boundary stops depending on discipline
 
 The keystone of phase 7, brought forward: `ModuleBoundaryTests` asserts the Core/Modules split from
