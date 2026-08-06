@@ -1,5 +1,33 @@
 # ANTHILL Changelog
 
+## v3.8.10 - The tool contract joins the SDK
+
+Phase 5b of the Core/Modules split (`docs/REFACTOR-PLAN.md`).
+
+- **`ToolResult` and `ITool` move to `Anthill.SDK.Tools`.** 5a is what made this possible:
+  `ToolResult`'s only dependencies are `FailureClass` and `FailureClassify`, and both joined the SDK
+  in v3.8.9. `ITool.Run` returns `ToolResult` and needs nothing further.
+- **Surveyed before moving, by full qualified string rather than suffix.** 138 bare `ToolResult`
+  references resolve through a global using and needed no edit; 8 `Domain.ToolResult` were rewritten;
+  5 `Contracts.ToolResult` were deliberately left, because that is a DIFFERENT type that stays in the
+  core. Exactly two files went ambiguous — `ToolDefinition.cs` and `TaskContractTests.cs`, each
+  importing `Anthill.Core.Contracts` *and* using the bare name — and both now alias explicitly.
+- **`IModuleContext.RegisterTool(ITool)` — the phase-0 deferral, closed.** It was omitted deliberately
+  when the interface was written: `ITool` was in the core, so the only options were
+  `RegisterTool(string, object)`, which abandons the type system at the seam whose job is enforcing
+  types, or a duplicate SDK interface. Waiting three phases was the right trade.
+- **Module tools are buffered, not registered directly.** Modules load before the Queen, and she
+  builds the tool registry — so a tool registered during `Register()` has nowhere to go. `ModuleHost`
+  collects them and the composition root drains them into `Queen.Tools` once she exists. Empty today;
+  the path is live so the first module tool needs no further wiring.
+- **A duplicate tool name throws.** `ToolRegistry.Register` is last-write-wins, which is right for the
+  core replacing its own built-ins — but two modules both claiming "shell" is a misconfiguration, and
+  silently running one of them is not a failure anyone notices until the wrong one executes.
+
+`IToolKindExecutor` stays in the core for 5c: it needs `ToolDefinition`, which is entangled with
+`ToolAuthorization` and `ToolInventory`.
+
+
 ## v3.8.9 - Half the contract vocabulary joins the SDK
 
 Phase 5a of the Core/Modules split (`docs/REFACTOR-PLAN.md`), on the second attempt — and the
