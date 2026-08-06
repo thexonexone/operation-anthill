@@ -409,7 +409,25 @@ the file-writing and patch-application gates — the ones that decide whether an
 
 1. `ToolOptions` in the SDK carrying the 17 settings; `ToolRuntime.Configure` at the composition
    root, mirroring `HomelabRuntime`
-2. `TextUtil`, `UrlSafety`, `Validation` → SDK, reading `ToolOptions` instead of `AnthillRuntime`
+2. `TextUtil`, `UrlSafety`, `Validation` → SDK — **SURVEYED, and it is not one job but two**
+
+   Their settings split cleanly, and the split decides the design:
+
+   | Setting | Form | Implication |
+   |---|---|---|
+   | `MaxResultSummaryChars`, `TokenEstimateCharsPerToken`, `ApprovalIdMaxChars`, `PatchIdMaxChars`, `SourceIdMaxChars` | `const` | immutable — pass as plain values or leave as SDK constants |
+   | `WebSearchKeywords`, `SsrfBlockedHostnames`, `BlockedPathParts` | `static readonly HashSet` | the REFERENCE is readonly, the CONTENTS are not — an operator or test can add an SSRF block at runtime, so these need live reads like the tool gates |
+
+   **Blast radius is very uneven.** `UrlSafety` and `Validation` have 4 consuming files each —
+   comparable to the v3.8.11 change. `TextUtil` has **18**, and it is used well outside the tool
+   layer, so it should move on its own, not bundled with the other two.
+
+   Suggested order: `UrlSafety` + `Validation` first (small, and they carry the SSRF and path
+   guards the tools actually need), then `TextUtil` separately.
+
+   Note the trap this survey already avoided once: `SsrfBlockedHostSuffixes` appears in the tool
+   layer's reads but does NOT exist under that name in `AnthillRuntime`. Resolve every setting name
+   against the declaration before designing the contract around it.
 3. `IToolKindExecutor` + `ToolDefinition` → SDK
 4. The seven implementations → `Anthill.Modules.Tools.*`, registered through
    `IModuleContext.RegisterTool` (already wired in v3.8.10 — buffered by `ModuleHost`, drained by

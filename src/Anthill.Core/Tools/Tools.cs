@@ -179,6 +179,13 @@ public sealed class ToolRegistry
 
 public sealed class SystemInfoTool : ITool
 {
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public SystemInfoTool(IToolRuntimeOptions? options = null) => _options = options ?? ToolRuntime.Live;
     public string Name => "system_info";
     public string Description => "Read-only tool that returns basic OS, runtime, and workspace information.";
 
@@ -191,12 +198,12 @@ public sealed class SystemInfoTool : ITool
             ["runtime"] = RuntimeInformation.FrameworkDescription,
             ["machine"] = Environment.MachineName,
             ["current_working_directory"] = Directory.GetCurrentDirectory(),
-            ["script_directory"] = AnthillRuntime.ScriptDir,
+            ["script_directory"] = _options.ScriptDirectory,
             ["allowed_workspace_root"] = new WorkspacePathGuard().Root,
-            ["file_tools_enabled"] = AnthillRuntime.EnableFileTools,
-            ["shell_tool_enabled"] = AnthillRuntime.EnableShellTool,
-            ["patch_application_enabled"] = AnthillRuntime.EnablePatchApplication,
-            ["file_writing_enabled"] = AnthillRuntime.EnableFileWriting,
+            ["file_tools_enabled"] = _options.FileToolsEnabled,
+            ["shell_tool_enabled"] = _options.ShellToolEnabled,
+            ["patch_application_enabled"] = _options.PatchApplicationEnabled,
+            ["file_writing_enabled"] = _options.FileWritingEnabled,
             ["parallel_execution_enabled"] = AnthillRuntime.EnableParallelExecution,
             ["max_parallel_workers"] = AnthillRuntime.MaxParallelWorkers,
             ["fts_memory_enabled"] = AnthillRuntime.EnableFtsMemory,
@@ -211,11 +218,21 @@ public sealed class DirectoryListTool : ITool
     public string Name => "list_directory";
     public string Description => "Read-only tool that lists files and folders inside the allowed workspace.";
     private readonly WorkspacePathGuard _guard;
-    public DirectoryListTool(WorkspacePathGuard guard) => _guard = guard;
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public DirectoryListTool(WorkspacePathGuard guard, IToolRuntimeOptions? options = null)
+    {
+        _guard = guard;
+        _options = options ?? ToolRuntime.Live;
+    }
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.FileToolsEnabled) return new ToolResult(Name, false, "", "File tools are disabled by config.", FailureClass.AuthorizationFailure);
         var requested = (args.GetValueOrDefault("path")?.ToString()) ?? ".";
         string safePath;
         try { safePath = _guard.ResolveSafePath(requested); }
@@ -243,11 +260,21 @@ public sealed class ReadTextFileTool : ITool
     public string Name => "read_text_file";
     public string Description => "Read-only tool that reads text files inside the allowed workspace with a character limit.";
     private readonly WorkspacePathGuard _guard;
-    public ReadTextFileTool(WorkspacePathGuard guard) => _guard = guard;
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public ReadTextFileTool(WorkspacePathGuard guard, IToolRuntimeOptions? options = null)
+    {
+        _guard = guard;
+        _options = options ?? ToolRuntime.Live;
+    }
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileTools) return new ToolResult(Name, false, "", "File tools are disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.FileToolsEnabled) return new ToolResult(Name, false, "", "File tools are disabled by config.", FailureClass.AuthorizationFailure);
         var requested = args.GetValueOrDefault("path")?.ToString();
         if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path", FailureClass.ValidationFailure);
         string safePath;
@@ -255,9 +282,9 @@ public sealed class ReadTextFileTool : ITool
         catch (Exception e) { return new ToolResult(Name, false, "", e.Message, ToolRegistry.ClassifyThrown(e)); }
         if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to read from blocked internal/system path.", FailureClass.AuthorizationFailure);
         var suffix = Path.GetExtension(safePath).ToLowerInvariant();
-        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read blocked file type: {suffix}", FailureClass.AuthorizationFailure);
+        if (_options.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read blocked file type: {suffix}", FailureClass.AuthorizationFailure);
         if (!File.Exists(safePath)) return new ToolResult(Name, false, "", $"File does not exist: {safePath}", FailureClass.ValidationFailure);
-        if (!AnthillRuntime.PatchAllowedSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read unsupported file type: {suffix}", FailureClass.AuthorizationFailure);
+        if (!_options.PatchAllowedSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to read unsupported file type: {suffix}", FailureClass.AuthorizationFailure);
         string content;
         try { content = File.ReadAllText(safePath); }
         catch (Exception e) { return new ToolResult(Name, false, "", $"Could not read file: {e.Message}", ToolRegistry.ClassifyThrown(e)); }
@@ -271,11 +298,21 @@ public sealed class WriteTextFileTool : ITool
     public string Name => "write_text_file";
     public string Description => "Writes or creates a text file inside the allowed workspace. Requires file_writing_enabled.";
     private readonly WorkspacePathGuard _guard;
-    public WriteTextFileTool(WorkspacePathGuard guard) => _guard = guard;
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public WriteTextFileTool(WorkspacePathGuard guard, IToolRuntimeOptions? options = null)
+    {
+        _guard = guard;
+        _options = options ?? ToolRuntime.Live;
+    }
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.FileWritingEnabled) return new ToolResult(Name, false, "", "File writing is disabled by config.", FailureClass.AuthorizationFailure);
         var requested = args.GetValueOrDefault("path")?.ToString();
         var content   = args.GetValueOrDefault("content")?.ToString();
         if (string.IsNullOrEmpty(requested)) return new ToolResult(Name, false, "", "Missing required argument: path", FailureClass.ValidationFailure);
@@ -285,7 +322,7 @@ public sealed class WriteTextFileTool : ITool
         catch (Exception e) { return new ToolResult(Name, false, "", e.Message, ToolRegistry.ClassifyThrown(e)); }
         if (_guard.IsBlockedPath(safePath)) return new ToolResult(Name, false, "", "Refusing to write to blocked internal/system path.", FailureClass.AuthorizationFailure);
         var suffix = Path.GetExtension(safePath).ToLowerInvariant();
-        if (AnthillRuntime.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to write blocked file type: {suffix}", FailureClass.AuthorizationFailure);
+        if (_options.BlockedFileSuffixes.Contains(suffix)) return new ToolResult(Name, false, "", $"Refusing to write blocked file type: {suffix}", FailureClass.AuthorizationFailure);
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(safePath)!);
@@ -298,13 +335,20 @@ public sealed class WriteTextFileTool : ITool
 
 public sealed class ShellCommandTool : ITool
 {
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public ShellCommandTool(IToolRuntimeOptions? options = null) => _options = options ?? ToolRuntime.Live;
     public string Name => "shell_command";
     public string Description => "Optional minimal shell command tool. Disabled by default. High risk.";
     private static readonly HashSet<string> SafeCommands = new() { "dir", "ls", "pwd", "echo", "dotnet", "type", "cat", "find", "grep" };
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableShellTool) return new ToolResult(Name, false, "", "Shell tool is disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.ShellToolEnabled) return new ToolResult(Name, false, "", "Shell tool is disabled by config.", FailureClass.AuthorizationFailure);
         var command = (args.GetValueOrDefault("command")?.ToString() ?? "").Trim();
         if (command.Length == 0) return new ToolResult(Name, false, "", "Missing required argument: command", FailureClass.ValidationFailure);
         var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -331,13 +375,20 @@ public sealed class ShellCommandTool : ITool
 
 public sealed class WebSearchTool : ITool
 {
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public WebSearchTool(IToolRuntimeOptions? options = null) => _options = options ?? ToolRuntime.Live;
     public string Name => "web_search";
     public string Description => "Read-only web search tool for current/public information. Disabled unless web search is enabled.";
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(AnthillRuntime.WebSearchTimeoutSeconds) };
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnableWebSearch)
+        if (!_options.WebSearchEnabled)
             return new ToolResult(Name, false, "", "Web search is disabled by config. Enable read-only external research to use it.", FailureClass.AuthorizationFailure);
         var query = (args.GetValueOrDefault("query")?.ToString() ?? "").Trim();
         var maxResults = Math.Max(1, Math.Min(
@@ -386,12 +437,22 @@ public sealed class ApplyPatchTool : ITool
     public string Name => "apply_patch";
     public string Description => "Approval-gated tool that applies safe ADD or MODIFY patch proposals with backups.";
     private readonly WorkspacePathGuard _guard;
-    public ApplyPatchTool(WorkspacePathGuard guard) => _guard = guard;
+    // v3.8.11 — the runtime gates arrive through an interface, read LIVE on every call. This is
+    // the colony's SECOND gate: RuntimeOptions already decided whether to register this tool,
+    // and this re-check is what stops one that somehow reached the registry from acting.
+    // Capturing the values would quietly collapse the two into one.
+    private readonly IToolRuntimeOptions _options;
+
+    public ApplyPatchTool(WorkspacePathGuard guard, IToolRuntimeOptions? options = null)
+    {
+        _guard = guard;
+        _options = options ?? ToolRuntime.Live;
+    }
 
     public ToolResult Run(IReadOnlyDictionary<string, object?> args)
     {
-        if (!AnthillRuntime.EnablePatchApplication) return new ToolResult(Name, false, "", "Patch application is disabled by config.", FailureClass.AuthorizationFailure);
-        if (!AnthillRuntime.EnableFileWriting) return new ToolResult(Name, false, "", "File writing is disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.PatchApplicationEnabled) return new ToolResult(Name, false, "", "Patch application is disabled by config.", FailureClass.AuthorizationFailure);
+        if (!_options.FileWritingEnabled) return new ToolResult(Name, false, "", "File writing is disabled by config.", FailureClass.AuthorizationFailure);
         if (args.GetValueOrDefault("patch") is not Dictionary<string, object?> patch)
             return new ToolResult(Name, false, "", "Missing required dict argument: patch", FailureClass.ValidationFailure);
 
@@ -424,7 +485,7 @@ public sealed class ApplyPatchTool : ITool
     private string? BackupFile(string path)
     {
         if (!File.Exists(path)) return null;
-        var backupRoot = Path.GetFullPath(Path.Combine(AnthillRuntime.ScriptDir, AnthillRuntime.BackupDir));
+        var backupRoot = Path.GetFullPath(Path.Combine(_options.ScriptDirectory, _options.BackupDirectory));
         Directory.CreateDirectory(backupRoot);
         var safeName = Path.GetRelativePath(new WorkspacePathGuard().Root, path).Replace("\\", "__").Replace("/", "__");
         var backupPath = Path.Combine(backupRoot, $"{safeName}.{AnthillTime.TimestampId()}.bak");

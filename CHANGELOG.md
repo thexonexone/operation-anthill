@@ -1,5 +1,31 @@
 # ANTHILL Changelog
 
+## v3.8.11 - The tool gates become a contract
+
+Phase 5c step 1 of the Core/Modules split (`docs/REFACTOR-PLAN.md`) — the prerequisite for moving the
+tool implementations out, and the step where the plan turned out to be wrong.
+
+- **`IToolRuntimeOptions` is an interface with live-reading properties, NOT a snapshot record.** The
+  plan said to copy the `HomelabOptions` pattern. Measuring first showed why that would have been a
+  defect: these are capability gates, and the colony gates them TWICE on purpose — `RuntimeOptions`
+  decides at composition time whether a tool is registered, and the tool re-checks when it runs, so
+  one that somehow reached the registry still refuses to act. A captured value collapses the second
+  check into the first, and every existing test would still have passed.
+- **The fields behind them are mutable statics the test suite toggles.** A snapshot would make a test
+  that flips `EnableShellTool` pass while the production path read something else — the worst kind of
+  green.
+- **Only the mutable settings are in the interface.** `MaxFileReadChars`, `MaxDirectoryItems`,
+  `WebSearchProvider`, `MaxWebResults` and `WebSearchTimeoutSeconds` are `const`; putting them behind
+  an interface would advertise a flexibility that does not exist.
+- **Sixteen reads across seven tools now go through it**, injected with a live-reading default, so
+  every existing construction — all of them, since the Queen still builds every tool — behaves
+  exactly as before.
+- `ToolRuntimeOptionsTests` pins the property that matters: a gate flipped AFTER construction changes
+  the answer on the next call.
+
+The implementations have not moved yet. This is the seam they need, built and tested first.
+
+
 ## v3.8.10 - The tool contract joins the SDK
 
 Phase 5b of the Core/Modules split (`docs/REFACTOR-PLAN.md`).
