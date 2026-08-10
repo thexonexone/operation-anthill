@@ -2511,7 +2511,12 @@ async function doApproval(id,action,kind){
 }
 
 async function cancelJob(id){
-  if(!await uiConfirm('Cancel this running job?')) return;
+  // v3.8.34: the only bare confirmation in the console — every other one states its consequence,
+  // including "Cancel all" directly above it. Worded from what the server actually does: the token
+  // aborts the in-flight model call and stops the scheduler, and ComputeOutcome then records
+  // "Cancelled by operator — N/M tasks finished before stopping", so finished tasks survive.
+  if(!await uiConfirm('Stop this mission run? Tasks that already finished are kept; the step in '
+                    + 'progress is abandoned and the run ends there.')) return;
   try{ await api(`/jobs/${id}/cancel`,'POST'); pollJobs(); }catch(e){console.error('Cancel',e);}
 }
 // v2.7.0: re-dispatch a finished/cancelled mission with the exact same directive (the mode prefix
