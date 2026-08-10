@@ -1406,6 +1406,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="sp-head">Model Routing</div>
           <div class="sp-row"><span class="sp-key">Mode</span><span class="sp-val" id="sp-mode">—</span></div>
           <div class="sp-row"><span class="sp-key">Default model</span><span class="sp-val" id="sp-default">—</span></div>
+          <!-- v3.8.34: roles whose routed model cannot meet their contract. Hidden when none are,
+               so a healthy colony gains no row; see renderStatusPop. -->
+          <div class="sp-row" id="sp-fitness-row" style="display:none;">
+            <span class="sp-key">Role fitness</span><span class="sp-val" id="sp-fitness">—</span>
+          </div>
           <div id="sp-routes" style="margin-top:6px;"></div>
           <div style="display:flex;gap:8px;margin-top:12px;">
             <div class="sp-btn" data-onclick="closeStatusPop();showPage('antconfig')">Change models</div>

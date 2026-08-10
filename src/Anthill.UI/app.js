@@ -2577,6 +2577,24 @@ function renderStatusPop(){
   setEl('sp-ollama-host',s.ollama_host||'—');
   setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
   setEl('sp-default',s.default_model||'—');
+  // v3.8.34: roles routed to a model that cannot meet their contract. Reported here because the
+  // only other surface is the Tools & Routing widget, which ships hidden — so on a default
+  // dashboard an operator was told the model was reachable and resolved while seven of ten roles
+  // would parse prose into an empty result. The row appears ONLY when something is wrong, so a
+  // healthy colony gains no clutter; the per-role reasons stay one click away in Tools & Routing.
+  const unfit = Number(s.unfit_role_count)||0;
+  const fitRow = document.getElementById('sp-fitness-row');
+  if(fitRow){
+    fitRow.style.display = unfit>0 ? '' : 'none';
+    const fitEl = document.getElementById('sp-fitness');
+    if(fitEl){
+      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot use the routed model';
+      fitEl.style.color = 'var(--amber,#f59e0b)';
+      fitEl.title = 'These roles are routed to a model missing a capability their contract needs — '
+                  + 'they will run and return empty or unusable results. Open Tools & Routing for '
+                  + 'the per-role reasons.';
+    }
+  }
   const routes=s.routes||[];
   document.getElementById('sp-routes').innerHTML=routes.map(rt=>{
     const local=(rt.provider||'ollama').toLowerCase()==='ollama';
