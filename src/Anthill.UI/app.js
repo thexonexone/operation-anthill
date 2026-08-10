@@ -2102,14 +2102,26 @@ async function pollHud(){
   setEl('attn-count', attn.length?`${attn.length} item${attn.length===1?'':'s'}`:'');
   const attnPanel=document.getElementById('hud-attn-panel');
   attnPanel&&attnPanel.classList.toggle('glow-warn', attn.length>0);
-  if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
-  else attnList.innerHTML=attn.slice(0,6).map(it=>
-    `<div class="hud-attn-item" data-onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
-    `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+  // v3.8.34: every write below is to a WIDGET BODY, and a hidden widget has no body in the DOM.
+  //
+  // `attnPanel` was guarded and `attnList` — the very next line, same widget — was not, so on any
+  // dashboard without Operator Attention this threw `Cannot set properties of null` and took the
+  // REST OF pollHud with it: the missions, changes and objectives summaries below never ran, on
+  // every poll, forever. DEFAULT_DASHBOARD_VIEW ships operator-attention hidden, so this was the
+  // default first-run dashboard, and the symptom was silent — four panels that simply stayed empty.
+  //
+  // Guarded individually rather than behind one early return: which widgets are on screen is the
+  // operator's choice, and hiding one must not stop the others from updating.
+  if(attnList){
+    if(!attn.length){ attnList.innerHTML='<div class="hud-state">✓ No operator action required.</div>'; }
+    else attnList.innerHTML=attn.slice(0,6).map(it=>
+      `<div class="hud-attn-item" data-onclick="${it.go}"><span class="t-dot ${it.sev}" style="margin-top:5px"></span>`+
+      `<div class="a-body"><div class="a-title">${escapeHtml(it.title)}</div><div class="a-reason">${it.reason}</div></div></div>`).join('');
+  }
 
   // -- Summaries --
   const msEl=document.getElementById('ov-sum-missions');
-  msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
+  if(msEl) msEl.innerHTML = missions.length ? missions.slice(0,5).map(m=>
     `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-bottom:1px solid rgba(30,51,84,.4)" data-onclick="openResults('${m.id}')">`+
     hudBadge(hudStatusClass(m.status),m.status)+
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${escapeHtml(m.goal||'')}</span>`+
@@ -2118,7 +2130,8 @@ async function pollHud(){
 
   const pc={proposed:0,approved:0,applied:0,rejected:0,failed:0}; patches.forEach(p=>{ if(pc[p.status]!=null) pc[p.status]++; });
   const chip=(label,val,cls)=>`<span class="hud-badge ${cls}" style="justify-content:center">${label} ${val}</span>`;
-  document.getElementById('ov-sum-patches').innerHTML = patches.length ?
+  const pxEl=document.getElementById('ov-sum-patches');
+  if(pxEl) pxEl.innerHTML = patches.length ?
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Pending',pc.proposed,'pending')+chip('Approved',pc.approved,'approved')+chip('Applied',pc.applied,'applied')+
       chip('Rejected',pc.rejected,'rejected')+(pc.failed?chip('Failed',pc.failed,'failed'):'')+
@@ -2131,7 +2144,8 @@ async function pollHud(){
     else if(o.end_reason==='failed') oc.failed++;
     else if(st==='done') oc.done++; else if(st==='paused') oc.paused++;
     else if(st==='active'||st==='pending') oc.active++; });
-  document.getElementById('ov-sum-objectives').innerHTML = objectives.length ?
+  const objEl=document.getElementById('ov-sum-objectives');
+  if(objEl) objEl.innerHTML = objectives.length ?
     `<div style="display:flex;flex-wrap:wrap;gap:6px">`+
       chip('Active',oc.active,'active')+chip('Completed',oc.done,'completed')+chip('Paused',oc.paused,'paused')+
       (oc.looping?chip('Looping',oc.looping,'looping'):'')+(oc.failed?chip('Failed',oc.failed,'failed'):'')+`</div>`

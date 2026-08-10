@@ -470,6 +470,50 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// `pollHud` writes only into widget bodies, and a hidden widget has no body — so every write
+    /// there must tolerate a missing element.
+    ///
+    /// v3.8.34. `attnPanel` was null-guarded and `attnList` — the next line, same widget — was not.
+    /// On any dashboard without Operator Attention, `attnList.innerHTML` threw
+    /// "Cannot set properties of null" and took the REST of pollHud with it: the missions, changes
+    /// and objectives summaries below never ran. Every poll. The live console had logged a thousand
+    /// of these, and the visible symptom was only that four panels stayed empty — no broken layout,
+    /// no error surface, nothing an operator could report beyond "buggy".
+    ///
+    /// DEFAULT_DASHBOARD_VIEW ships operator-attention hidden, which made this the DEFAULT
+    /// first-run dashboard rather than an edge case, and is why a guard keyed to the default layout
+    /// is worth more than one keyed to the code alone.
+    /// </summary>
+    [Fact]
+    public void EveryWidgetBodyWrite_InPollHud_ToleratesAHiddenWidget()
+    {
+        var js = Ui("app.js");
+        var body = BodyOf(js, "async function pollHud()");
+
+        Assert.True(body.Length > 0, "pollHud not found — this guard needs its new shape.");
+
+        // The unguarded shape: reach into the DOM and write straight through the result.
+        var chained = Regex.Matches(body, @"document\.getElementById\([^)]*\)\.(innerHTML|textContent)\s*=")
+            .Select(m => m.Value).ToList();
+
+        Assert.True(chained.Count == 0,
+            "pollHud writes through getElementById without a null check, so hiding the widget that "
+            + "owns this element throws and aborts the rest of the poll: " + string.Join(", ", chained));
+
+        // And the element that actually caused it: assigned to a local, then written unguarded.
+        var unguarded = Regex.Matches(body, @"(?<!if\s*\()\b(\w+)\.innerHTML\s*=")
+            .Select(m => m.Groups[1].Value)
+            .Distinct()
+            .Where(v => Regex.IsMatch(body, @"\b(?:const|let|var)\s+" + Regex.Escape(v) + @"\s*=\s*document\.getElementById")
+                     && !Regex.IsMatch(body, @"if\s*\(\s*" + Regex.Escape(v) + @"\s*\)"))
+            .ToList();
+
+        Assert.True(unguarded.Count == 0,
+            "these pollHud locals come from getElementById and are written without a null check: "
+            + string.Join(", ", unguarded));
+    }
+
+    /// <summary>
     /// `api()` takes its method POSITIONALLY, and no caller may pass an options object instead.
     ///
     /// v3.8.34. `hlAutoToggle` and `hlAutoEvaluate` called
