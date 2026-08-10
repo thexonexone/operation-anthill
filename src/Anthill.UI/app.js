@@ -7639,7 +7639,10 @@ function registerGridWidgets(){
     {id:'colony-health',      title:'Colony Health',      icon:'\u25c6', size:'small',  body:'ov2-health-body'},
     {id:'system-core',        title:'System Core',        icon:'\u2699', size:'small',  body:'ov2-core-body'},
     {id:'resource-usage',     title:'Resource Usage',     icon:'\u25a4', size:'small',  body:'ov2-resources-body'},
-    {id:'colony-jobs',        title:'Jobs',               icon:'\u2637', size:'small',  body:'jobs-list'},
+    // v3.8.34: "Job" was a third name for a thing the console already calls a mission.
+    // ApiJobRegistry names the type ApiMissionJob, POST /missions answers "Mission queued.", and
+    // every row carries a mission_id. The queue is named after what is in it.
+    {id:'colony-jobs',        title:'Mission Runs',       icon:'\u2637', size:'small',  body:'jobs-list'},
     {id:'agent-inspector',    title:'Agent Inspector',    icon:'\u2b21', size:'medium', body:'agent-detail'},
     {id:'live-telemetry',     title:'Live Telemetry',     icon:'\u2261', size:'medium', body:'ov-feed-list'},
     {id:'recent-events',      title:'Recent Events',      icon:'\u25cf', size:'medium', body:'ov2-events-body'},
@@ -7647,7 +7650,11 @@ function registerGridWidgets(){
     {id:'approvals',          title:'Pending Approvals',  icon:'\u2713', size:'medium', body:'ov2-approvals-body'},
     {id:'patch-activity',     title:'Patch Activity',     icon:'\u2726', size:'medium', body:'ov-sum-patches'},
     {id:'objectives',         title:'Objectives',         icon:'\u25ce', size:'large',  body:'ov-sum-objectives'},
-    {id:'recent-jobs',        title:'Recent Jobs',        icon:'\u231b', size:'large',  body:'ov-jobs-list'},
+    // Same endpoint and same renderer as 'colony-jobs' above, capped at 5 rows instead of 8 \u2014
+    // pollJobs feeds both from one /jobs array. Renamed for consistency rather than merged: it is
+    // registered, an operator may have it enabled in a saved layout, and removing a widget is a
+    // product decision rather than a naming one.
+    {id:'recent-jobs',        title:'Recent Mission Runs',icon:'\u231b', size:'large',  body:'ov-jobs-list'},
     // v3.7.2: the operator surface for v3.4.1, v3.4.2 and v3.5.0. Registered but off by default \u2014
     // both answer questions an operator asks occasionally rather than continuously, and a console
     // that opens on everything is a wall rather than a dashboard.
