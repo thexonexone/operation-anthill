@@ -285,6 +285,36 @@ function enterApp(){
   startEventStream();   // v3.8.3: live push alongside the pollers, not instead of them yet
   // Restore nav collapse state
   if(localStorage.getItem('nav-collapsed')==='1') document.body.classList.add('nav-collapsed');
+  applyNarrowNav();
+}
+
+/**
+ * v3.8.34: collapse the sidebar on its own when the viewport cannot afford it.
+ *
+ * `#nav-rail` was a flat `width:var(--nav-w)` — 240px at every size. The console has seven narrow
+ * breakpoints and not one of them touched the rail, so at 760px it held roughly a third of the
+ * screen and the content it pushed aside got the rest. `.nav-collapsed` already styles exactly the
+ * state that is wanted; nothing was asking for it.
+ *
+ * Driven from matchMedia rather than a media query so the EXISTING collapsed rules are reused. A
+ * CSS breakpoint would have to restate the ten `.nav-collapsed` selectors, and two copies of one
+ * appearance is how they come to disagree.
+ *
+ * The operator's stored choice is never written here. Narrow forces collapse; returning to a wide
+ * viewport restores whatever they last chose deliberately — so resizing a window cannot silently
+ * rewrite a preference the operator set on purpose.
+ */
+var _narrowNav = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+function applyNarrowNav(){
+  if(!_narrowNav) return;
+  if(_narrowNav.matches) document.body.classList.add('nav-collapsed');
+  else document.body.classList.toggle('nav-collapsed', localStorage.getItem('nav-collapsed')==='1');
+}
+if(_narrowNav){
+  // addEventListener on MediaQueryList is the modern form; addListener is the fallback that keeps
+  // this working on older WebKit, which is a real target for a console opened from a NAS or phone.
+  if(_narrowNav.addEventListener) _narrowNav.addEventListener('change', applyNarrowNav);
+  else if(_narrowNav.addListener) _narrowNav.addListener(applyNarrowNav);
 }
 
 // Login

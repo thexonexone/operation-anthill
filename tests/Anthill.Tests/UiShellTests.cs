@@ -470,6 +470,38 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// Collapsing the sidebar because the WINDOW is narrow must not rewrite what the operator
+    /// chose.
+    ///
+    /// v3.8.34. `#nav-rail` was a flat `width:var(--nav-w)` — 240px at every size — and none of the
+    /// console's seven narrow breakpoints touched it, so at 760px the rail held about a third of
+    /// the viewport. `applyNarrowNav` reuses the existing `.nav-collapsed` styling rather than
+    /// restating those ten selectors behind a media query, because two copies of one appearance is
+    /// how they come to disagree.
+    ///
+    /// The hazard that reuse introduces is this one: the manual toggle persists to localStorage, so
+    /// an automatic collapse that took the same path would let dragging a window narrow overwrite a
+    /// preference the operator set deliberately — and it would only show up later, on a wide screen,
+    /// as a sidebar that "randomly" remembered the wrong thing. Narrow forces the class; only the
+    /// button writes the preference.
+    /// </summary>
+    [Fact]
+    public void TheAutomaticNavCollapse_NeverWritesTheOperatorsPreference()
+    {
+        var body = BodyOf(Ui("app.js"), "function applyNarrowNav()");
+
+        Assert.True(body.Length > 0,
+            "applyNarrowNav is missing — the sidebar has no automatic narrow-viewport behaviour, "
+            + "which is the state this test was written against.");
+
+        Assert.DoesNotContain("setItem", body);
+
+        // It must still READ the preference, or returning to a wide viewport would forget a
+        // deliberate collapse instead of restoring it.
+        Assert.Contains("getItem", body);
+    }
+
+    /// <summary>
     /// Every control `buildNav` gives an ARIA role must also be given a name.
     ///
     /// v3.8.34. The six domain heads (Monitoring, Operations, Infrastructure, Colony, Security,
