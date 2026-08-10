@@ -484,21 +484,26 @@ public class UiShellTests
     /// first-run dashboard rather than an edge case, and is why a guard keyed to the default layout
     /// is worth more than one keyed to the code alone.
     /// </summary>
-    [Fact]
-    public void EveryWidgetBodyWrite_InPollHud_ToleratesAHiddenWidget()
+    [Theory]
+    [InlineData("async function pollHud()")]
+    // v3.8.34: pollHealth had four more of the same shape — two dots, a colour and a class — found
+    // only because the autonomy status was being restyled next to them. One poller fixed and its
+    // neighbour left is how this defect comes back.
+    [InlineData("async function pollHealth()")]
+    public void EveryWidgetBodyWrite_InAPoller_ToleratesAHiddenWidget(string signature)
     {
         var js = Ui("app.js");
-        var body = BodyOf(js, "async function pollHud()");
+        var body = BodyOf(js, signature);
 
-        Assert.True(body.Length > 0, "pollHud not found — this guard needs its new shape.");
+        Assert.True(body.Length > 0, $"{signature} not found — this guard needs its new shape.");
 
         // The unguarded shape: reach into the DOM and write straight through the result.
-        var chained = Regex.Matches(body, @"document\.getElementById\([^)]*\)\.(innerHTML|textContent)\s*=")
+        var chained = Regex.Matches(body, @"document\.getElementById\([^)]*\)\.(innerHTML|textContent|className|style)")
             .Select(m => m.Value).ToList();
 
         Assert.True(chained.Count == 0,
-            "pollHud writes through getElementById without a null check, so hiding the widget that "
-            + "owns this element throws and aborts the rest of the poll: " + string.Join(", ", chained));
+            signature + " writes through getElementById without a null check, so hiding the widget "
+            + "that owns this element throws and aborts the rest of the poll: " + string.Join(", ", chained));
 
         // And the element that actually caused it: assigned to a local, then written unguarded.
         var unguarded = Regex.Matches(body, @"(?<!if\s*\()\b(\w+)\.innerHTML\s*=")

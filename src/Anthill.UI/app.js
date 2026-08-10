@@ -1919,10 +1919,31 @@ async function pollHealth(){
     const s=a.data||{}, d=m.data||{};
     // Autonomy
     const running=!!s.running, killed=!!s.kill_switch_engaged, enabled=!!s.enabled;
+    // v3.8.34: a presentation layer over the autonomy state, per the status vocabulary rule.
+    //
+    // This read RUNNING / HALTED / IDLE / OFF, and HALTED was red — the loudest thing on a default
+    // dashboard, with nothing saying what it meant or whether it was bad. It is not a fault: the
+    // kill switch is engaged BY an operator, from a confirmation that spells that out. Red for a
+    // state someone chose on purpose teaches people to ignore red.
+    //
+    // The internal state stays available on hover rather than being thrown away.
     const autoState=running?'RUNNING':(killed?'HALTED':(enabled?'IDLE':'OFF'));
-    setEl('ov-h-auto',autoState);
-    document.getElementById('ov-h-auto').style.color=running?'var(--green)':(killed?'var(--red)':'var(--muted)');
-    document.getElementById('ov-h-auto-dot').className='health-dot '+(running?'ok':(killed?'err':''));
+    const AUTO_LABEL={RUNNING:'Working',HALTED:'Stopped',IDLE:'Ready',OFF:'Off'};
+    const AUTO_WHY={
+      RUNNING:'The colony is working through its own objectives right now.',
+      HALTED:'Automatic work is stopped by the safety switch. Nothing runs on its own until you clear it — you can still send missions yourself.',
+      IDLE:'Automatic work is switched on, with nothing to do at the moment.',
+      OFF:'Automatic work is switched off. The colony only runs missions you send it.',
+    };
+    setEl('ov-h-auto',AUTO_LABEL[autoState]||autoState);
+    const autoEl=document.getElementById('ov-h-auto');
+    if(autoEl) autoEl.title=(AUTO_WHY[autoState]||'')+' (internal state: '+autoState+')';
+    // Amber, not red: stopped-on-purpose is not a failure. Red stays for things that broke.
+    autoEl && (autoEl.style.color=running?'var(--green)':(killed?'var(--amber,#f59e0b)':'var(--muted)'));
+    // Amber dot to match the amber text — a state the operator chose is not an error. Guarded for
+    // the same reason as pollHud: these are widget bodies, and a hidden widget has none.
+    const autoDot=document.getElementById('ov-h-auto-dot');
+    if(autoDot) autoDot.className='health-dot '+(running?'ok':(killed?'warn':''));
     setEl('ov-h-auto-day',`${s.missions_last_day??0}/${s.max_missions_per_day??'—'}`);
     setEl('ov-h-auto-backlog',`${(s.backlog_pending??0)+(s.backlog_active??0)}`);
     setEl('ov-h-auto-conc',`${s.concurrency_effective??s.concurrency_configured??1}/${s.concurrency_configured??1}`);
@@ -1933,7 +1954,8 @@ async function pollHealth(){
     const bar=document.getElementById('ov-h-disk-bar'); bar.style.width=usedPct+'%';
     const diskWarn=usedPct>=85, diskDanger=usedPct>=93;
     bar.style.background=diskDanger?'var(--red)':(diskWarn?'var(--queen)':'var(--green)');
-    document.getElementById('ov-h-disk-dot').className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
+    const diskDot=document.getElementById('ov-h-disk-dot');
+    if(diskDot) diskDot.className='health-dot '+(diskDanger?'err':(diskWarn?'warn':'ok'));
     setEl('ov-h-db',humanBytes(d.db_bytes));
     setEl('ov-h-backups',`${d.backup_count||0} · ${humanBytes(d.backup_bytes)}`);
     // Coder patch health (from recent events)
@@ -1941,8 +1963,10 @@ async function pollHealth(){
     const ok=c['patch_set_created']||0, fail=c['patch_proposal_parse_failed']||0, applied=c['autonomy_autoapply_applied']||0;
     const rate=(ok+fail)>0?Math.round(ok/(ok+fail)*100):null;
     setEl('ov-h-coder',rate==null?'—':rate+'%');
-    document.getElementById('ov-h-coder').style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
-    document.getElementById('ov-h-coder-dot').className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
+    const coderEl=document.getElementById('ov-h-coder');
+    if(coderEl) coderEl.style.color=rate==null?'var(--muted)':(rate>=80?'var(--green)':(rate>=50?'var(--queen)':'var(--red)'));
+    const coderDot=document.getElementById('ov-h-coder-dot');
+    if(coderDot) coderDot.className='health-dot '+(rate==null?'':(rate>=80?'ok':(rate>=50?'warn':'err')));
     setEl('ov-h-coder-ok',ok); setEl('ov-h-coder-fail',fail); setEl('ov-h-coder-applied',applied);
     // Alert line — nudge reclaimable disk
     const alert=document.getElementById('ov-health-alert');
@@ -1983,7 +2007,10 @@ const OV_MODE_TEXT={
   patch:'Create patch proposals only. Do not apply changes. ',
   build:'Create changes only if needed and run the normal build/test checks. ',
 };
-const OV_MODE_LABEL={inspect:'INSPECT',verify:'VERIFY',patch:'PATCH PROPOSAL',build:'FULL BUILD/TEST'};
+// v3.8.34: display only — the badge shown once a mode is chosen. The INSTRUCTION the model
+// receives is OV_MODE_TEXT above and is deliberately untouched; renaming what the operator reads
+// must not change what the colony is told.
+const OV_MODE_LABEL={inspect:'LOOK ONLY',verify:'CHECK MY WORK',patch:'SUGGEST CHANGES',build:'MAKE CHANGES & TEST'};
 function setOvMode(mode){
   ovMode = (ovMode===mode) ? '' : mode; // toggle
   document.querySelectorAll('#ov-modes .hud-act').forEach(b=>b.setAttribute('aria-pressed', b.dataset.mode===ovMode ? 'true':'false'));
