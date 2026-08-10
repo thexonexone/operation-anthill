@@ -470,6 +470,45 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// `api()` takes its method POSITIONALLY, and no caller may pass an options object instead.
+    ///
+    /// v3.8.34. `hlAutoToggle` and `hlAutoEvaluate` called
+    /// `window.api(path, {method:'POST'})` — the fetch-style shape, not this console's. The second
+    /// parameter is `method`, so it received an object, `fetch` stringified it to
+    /// "[object Object]", and the request threw on an invalid method token before leaving the
+    /// browser. `api` catches that and RETURNS `{success:false}` rather than throwing, so the
+    /// `catch(e){}` wrapped around each call never ran either; the result was discarded and the
+    /// panel re-rendered unchanged. Enabling an automation rule did nothing, and said nothing.
+    ///
+    /// Two console call sites out of roughly ninety had this shape and both were dead. The failure
+    /// is invisible at runtime — no console error, no failed request in the network panel, just a
+    /// control that does not work — so it has to be caught in the source.
+    /// </summary>
+    [Fact]
+    public void NoConsoleCall_PassesAnOptionsObjectWhereApiExpectsAMethod()
+    {
+        var js = Ui("app.js");
+
+        // Guard the reader: if `api` stops taking the method positionally this test is describing
+        // a function that no longer exists, and must fail rather than pass vacuously.
+        Assert.Contains("async function api(path, method='GET', body=null)", js, StringComparison.Ordinal);
+
+        // Matched on the object's `method:` key rather than on argument POSITION. Finding the
+        // second argument means balancing parentheses — the offending path was
+        // `'…/'+encodeURIComponent(id)+'/'+(on?'enable':'disable')`, which a positional pattern
+        // cannot span, and a guard that caught one of the two instances would have been worse than
+        // none. An options object handed to this `api` is wrong wherever it appears, so the key is
+        // the reliable signal.
+        var offenders = Regex.Matches(js, @"\bapi\([^;\n]*\{\s*method\s*:")
+            .Select(m => m.Value.Trim())
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "These calls pass an object where api() expects a method string, so the request is sent "
+            + "with an invalid method and fails silently: " + string.Join(" | ", offenders));
+    }
+
+    /// <summary>
     /// Collapsing the sidebar because the WINDOW is narrow must not rewrite what the operator
     /// chose.
     ///

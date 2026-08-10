@@ -5933,12 +5933,26 @@ async function hlLoadAutomation(){
       : '';
   }catch(e){ body.innerHTML='<span style="color:var(--red)">Error: '+escapeHtml(e.message||'')+'</span>'; }
 }
+// v3.8.34: both of these were dead, and silently.
+//
+// `api(path, method='GET', body=null)` takes the method POSITIONALLY. These two passed
+// `{method:'POST'}` as that second argument — the only two call sites in the console that did — so
+// `method` was an object, `fetch` stringified it to "[object Object]", and the request threw on an
+// invalid method token before it ever left the browser. `api` catches that and RETURNS
+// `{success:false}` rather than throwing, so the `catch(e){}` never even ran; the result was simply
+// discarded and `hlLoadAutomation()` re-rendered the unchanged state.
+//
+// The operator's experience: the toggle flips, snaps back on the reload, and nothing says why.
+// Two defects stacked — a wrong call shape, and a swallowed result that hid it — which is why a
+// rule that no endpoint ever received still looked like a rule that refused to change.
 async function hlAutoToggle(id,on){
-  try{ await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),{method:'POST'}); }catch(e){}
+  const r=await window.api('/homelab/automation/rules/'+encodeURIComponent(id)+'/'+(on?'enable':'disable'),'POST');
+  hlMsg(r&&r.success ? ('Rule '+(on?'enabled':'disabled')+'.') : ((r&&r.message)||'Could not change the rule.'), !!(r&&r.success));
   hlLoadAutomation();
 }
 async function hlAutoEvaluate(){
-  try{ await window.api('/homelab/automation/evaluate',{method:'POST'}); }catch(e){}
+  const r=await window.api('/homelab/automation/evaluate','POST');
+  hlMsg(r&&r.success ? 'Rules evaluated.' : ((r&&r.message)||'Could not evaluate the rules.'), !!(r&&r.success));
   hlLoadAutomation();
 }
 
