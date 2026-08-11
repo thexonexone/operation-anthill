@@ -3,6 +3,18 @@
 **Where the colony measurably IS.** Shipping release: **v0.3.8.41** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
+**v0.3.8.41 changes one thing in the table below.** `roster_profile` now defaults to `full`, so the
+twelve mission roles are enabled on a new installation and on any existing one that never touched
+the roster (`ConfigSchema` migrates only untouched legacy defaults; explicit choices and
+`disabled_roles` survive). Finalization was reordered so the archivist writes its memory candidates
+before learning consumes them, and made idempotent per evaluation; the verifier is now bound to the
+tester and soldier evidence rather than to whatever the planner had produced at planning time.
+
+**Still true, and the reason §6 stays open:** no live twelve-role mission has run against a real
+model, and there is no deterministic Queen-driven acceptance test that reaches all twelve roles
+through their production triggers. Enabling the roster by default makes that gap more visible, not
+smaller. It is the next release's whole job.
+
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
 twelve-role activation program (v3.8.19–v0.3.8.34). What follows is the state they left, measured.
 
@@ -81,8 +93,10 @@ It is not close, and the gap is not model quality — it is that roles still han
 | Gap | Why it matters |
 |---|---|
 | **Prose is still the PRIMARY channel** | v3.8.29 makes typed artifacts travel alongside it (coder, builder, verifier) with IDs for replay. `Task.Result` is still a string and the prose is still what the model reads first |
-| **The verifier is still planner-selectable** | Tester and soldier are inserted by policy as of v3.8.26; the verifier is not, because it is how verification currently happens at all |
-| **Six specialists are gated off by default** | tester, soldier, medic, archivist, ui_cartographer, scribe. All six now have a real trigger; `/colony` reports per-role readiness and the first binding blocked reason |
+| **The verifier is still planner-selectable** | PARTLY CLOSED v0.3.8.41 — policy now binds it to the tester's and soldier's evidence, or inserts it when the plan omitted one, and a verification that cannot be inserted sets a `DeterministicBlock`. Its contract is still `PlannerSelectable`, because flipping it would refuse every planner-produced verifier until the adaptive delta-plan path also carries a parent |
+| ~~Six specialists are gated off by default~~ | CLOSED v0.3.8.41 — `roster_profile` defaults to `full`. `ConfigSchema` migrates only configurations that never touched the roster; explicit choices and `disabled_roles` survive |
+| **The tester does not run on the patched tree** | THE gap this release stopped short of from both directions. v0.3.8.41 makes the tester's report NAME the tree it judged and binds the verifier to that evidence, but the materialised patch still does not outlive `VerifyPatchSet`'s sandbox, so the tester resolves to the mission workspace — the same source WITHOUT the proposal in it |
+| **No Queen-driven acceptance suite** | Twelve roles are enabled by default and every one has a production trigger; nothing yet drives all twelve through those triggers in one deterministic mission, and no live twelve-role mission has run against a real model |
 | ~~Environmental failures charged to the ant~~ | CLOSED v3.8.32 — `FailureClassNames` is the one conversion; a test drives real results through the real mapper into the real attribution rule |
 | ~~The verifier's sandbox held different bytes~~ | CLOSED v3.8.32 — `PatchApply` is the one applier; the materializer, the sandbox runner and `ApplyPatchTool` all call it |
 | ~~The tester→medic handoff never fired~~ | CLOSED v3.8.32 — the gate reads the scheduler's terminal-failure return value instead of the ant's status code |
