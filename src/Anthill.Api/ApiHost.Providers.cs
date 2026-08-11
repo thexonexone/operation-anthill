@@ -731,8 +731,12 @@ public static partial class ApiHost
                  * Thirty seconds is long enough for any agent that is going to answer at all and
                  * short enough that a hung one reports rather than pins a request.
                  */
-                var agentReply = new AgentCliProvider(agent, TimeSpan.FromSeconds(30))
-                    .Generate("Reply with the single word: OK", retries: 1);
+                // Held as IReasoningProvider, not as AgentCliProvider: `Generate` is a DEFAULT
+                // INTERFACE METHOD, which C# dispatches only through the interface. Calling it on
+                // the concrete type is CS1061, and the message ("does not contain a definition")
+                // reads like a missing member rather than the interface rule it actually is.
+                IReasoningProvider probe = new AgentCliProvider(agent, TimeSpan.FromSeconds(30));
+                var agentReply = probe.Generate("Reply with the single word: OK", retries: 1);
 
                 // Deliberately NOT recorded through SetProviderVerification. That table is the
                 // credential store's view of a keyed provider, and an agent has no row in it —
