@@ -1051,18 +1051,39 @@ function colonyAngleFor(role,index,total){
   const c=roleColony(role),ci=Math.max(0,CHAMBER_ORDER.indexOf(c));
   return -115 + ci*(230/Math.max(1,CHAMBER_ORDER.length-1)) + (index%3-1)*7;
 }
+/* v0.3.8.42 — whether the roster on screen came from the runtime, and when.
+ *
+ * `colonyRegistry` alone could not answer that. A failed load left it null and `buildNodes` then
+ * INVENTED a six-role roster with `Enabled:true, Executable:true` and drew it as the colony — so an
+ * operator whose `/colony/registry` was failing saw a healthy six-ant colony that did not exist.
+ * The fabrication was also six releases stale: this colony runs twelve roles by default.
+ *
+ * Three states, because "never loaded" and "loaded and now failing" need different screens: the
+ * first has nothing to show, the second has something worth showing as STALE.
+ */
+var registryState = { status:'loading', at:0, error:'' };
+
 async function loadColonyRegistry(){
   try{
     const r=await api('/colony/registry');
     if(r.success){
       colonyRegistry=r.data;
+      registryState={ status:'ok', at:Date.now(), error:'' };
       // v2.14.13: truthful per-role runtime state for the inspector, from the same fetch.
       antRuntimeStatus={};
       (r.data.runtime_status||[]).forEach(st=>{ antRuntimeStatus[String(st.role_id||'').toLowerCase()]=st; });
       buildNodes();renderColonyLegend();
       if(document.getElementById('page-antconfig')?.classList.contains('active')) openAntConfig();
+      return;
     }
-  }catch(e){console.warn('colony registry unavailable',e);}
+    // A structured failure is still a failure. `if(r.success)` with no else meant an authorisation
+    // refusal or a 500 left the previous drawing on screen with nothing saying it was old.
+    registryState={ status:'error', at:registryState.at, error:(r&&r.message)||'the colony registry could not be read' };
+  }catch(e){
+    registryState={ status:'error', at:registryState.at, error:(e&&e.message)||'the colony registry could not be reached' };
+  }
+  renderColonyLegend();
+  buildNodes();
 }
 
 function buildNodes(){
@@ -1071,11 +1092,29 @@ function buildNodes(){
   nodes.push({ id:'queen',ant:'queen',x:cx,y:cy,label:'Queen',role:'CORE',colony:'Core',purpose:'Central mission authority',color:ROLE_COLORS.queen,r:QUEEN_R,pp:0,activity:1,nodeType:'core',chamber:"Queen's Core" });
   nodes.push({ id:'director',ant:'director',x:cx,y:cy-bR*.48,label:'Director',role:'AUTONOMY',colony:'Core',purpose:'Objective lifecycle and autonomy control',color:ROLE_COLORS.director,r:18,pp:1,activity:0,nodeType:'core',chamber:"Queen's Core" });
   edges.push({from:'queen',to:'director'});
-  if(!colonyRegistry){
-    const fallback=['researcher','file','web','coder','builder','verifier'].map(id=>({RoleId:id,DisplayName:ANT_MAP[id].label,Colony:ANT_MAP[id].role,Purpose:'Legacy executable ant',Enabled:true,Executable:true,Workers:[]}));
-    colonyRegistry={roles:fallback};
-  }
-  const roles=visibleRoles();
+  /* v0.3.8.42 — THE FABRICATED ROSTER IS GONE.
+   *
+   * This used to be:
+   *
+   *   if(!colonyRegistry){
+   *     const fallback=['researcher','file','web','coder','builder','verifier']
+   *       .map(id=>({ ..., Enabled:true, Executable:true, Workers:[] }));
+   *     colonyRegistry={roles:fallback};
+   *   }
+   *
+   * When `/colony/registry` failed, the console invented six ants, marked every one of them
+   * ENABLED and EXECUTABLE, assigned the invention to the global, and drew it as the colony. An
+   * operator whose registry was unreachable saw a healthy colony. That is the exact inversion this
+   * console exists to prevent, and it was also six releases out of date — Anthill runs twelve roles
+   * by default since v0.3.8.41, so even the lie was stale.
+   *
+   * Assigning to the global made it unrecoverable as well: nothing downstream could tell invented
+   * roles from real ones.
+   *
+   * With no registry we draw the control plane only — Queen and Director are structural facts of
+   * the product, not runtime discoveries — and the legend states why the roster is missing.
+   */
+  const roles = colonyRegistry ? visibleRoles() : [];
   // v2.14.5 chamber mode: cluster each colony around its own centre. Roles fan out inside their
   // chamber instead of sharing one global ring, so groups are visually distinct on the SAME canvas.
   const chamberMode=colonyView==='group';
@@ -2349,11 +2388,27 @@ let pheromoneTrails=[], pheromoneIntensity=0, pheroMotes=[];
 function renderColonyLegend(){
   const el=document.getElementById('chud-legend'); if(!el || typeof ANT_MAP==='undefined') return;
   const roles=(colonyRegistry?.roles||colonyRegistry?.Roles||[]).filter(r=>!['queen','director'].includes(roleId(r)));
+
+  /* v0.3.8.42 — the legend says when it has nothing, instead of naming six ants it made up.
+   *
+   * This read `roles.length ? roles.map(roleId) : CHUD_CASTES` — the same six-caste literal the
+   * canvas fabricated, in a second place. With the registry unreachable the legend listed
+   * researcher/web/file/coder/builder/verifier as though the runtime had reported them.
+   */
+  if(!roles.length){
+    const failed = registryState.status==='error';
+    el.innerHTML = `<div class="chud-caste chud-caste-state">${
+      failed ? escapeHtml('Roster unavailable — '+(registryState.error||'the colony registry could not be read'))
+             : 'Reading the colony registry…'}</div>`
+      + (failed ? `<div class="chud-caste"><button class="conv-btn" data-onclick="loadColonyRegistry()">Retry</button></div>` : '');
+    return;
+  }
+
   // v2.14.15: no arbitrary cap. This used to .slice(0,15), which silently dropped all eight
   // homelab ants (inventory, network_scout, health, proxmox, storage, backup, security_scout,
   // change_archivist) from the legend while they were still drawn on the canvas. The legend is
   // now a hideable, scrollable overlay, so it can afford to be complete.
-  const want=(roles.length?roles.map(roleId):CHUD_CASTES);
+  const want=roles.map(roleId);
   el.innerHTML=want.map(a=>{
     const am=ANT_MAP[a]||{label:roleName(roles.find(r=>roleId(r)===a)||{RoleId:a}),color:ROLE_COLORS[a]||'#7fa0bc'}; if(!am) return '';
     const on=(colonyActivity[a]||0)>0;

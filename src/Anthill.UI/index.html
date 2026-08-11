@@ -1560,8 +1560,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="ath-card ov2-actions"><div class="ath-card-title">Quick Actions</div>
             <div class="ov2-qa">
               <button data-onclick="ov2FocusMission()">🎯 Create Mission</button>
-              <button data-onclick="showPage('patches')">🩹 Patch Colony</button>
-              <button data-onclick="showPage('autonomy')">🩺 Run Diagnostic</button>
+              <!-- v0.3.8.42: these said "Patch Colony" and "Run Diagnostic" and did neither.
+                   Both are showPage() calls. An action verb on a navigation control tells an
+                   operator something happened; nothing did, and on a console whose whole job is
+                   proposing changes to a repository, a button labelled Patch is the worst possible
+                   place to be imprecise. Labelled for what they do. -->
+              <button data-onclick="showPage('patches')">🩹 View Changes</button>
+              <button data-onclick="showPage('autonomy')">🩺 Open Automation</button>
               <button data-onclick="showPage('pheromones')">🧪 View Signals</button>
               <button data-onclick="showPage('events')">📜 Events</button>
               <button data-onclick="showPage('settings')">⚙ Colony Settings</button>
