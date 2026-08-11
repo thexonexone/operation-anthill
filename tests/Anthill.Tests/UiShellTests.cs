@@ -542,7 +542,9 @@ public class UiShellTests
 
         // Guard the reader: if `api` stops taking the method positionally this test is describing
         // a function that no longer exists, and must fail rather than pass vacuously.
-        Assert.Contains("async function api(path, method='GET', body=null)", js, StringComparison.Ordinal);
+        // (v0.3.8.46: the signature grew a timeout — the method is still positional, which is
+        // what this test actually cares about.)
+        Assert.Contains("async function api(path, method='GET', body=null, timeoutMs=10000)", js, StringComparison.Ordinal);
 
         // Matched on the object's `method:` key rather than on argument POSITION. Finding the
         // second argument means balancing parentheses — the offending path was
