@@ -270,7 +270,20 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         if (Router is null) return;
         var output = to ?? Console.Error;
 
-        foreach (var fitness in AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts).Where(f => !f.Fit))
+        var report = AntModelFitness.CheckAll(Router, AntExecutionCatalog.Contracts);
+
+        // v0.3.8.41 — an UNRESOLVED route is reported once, not once per role.
+        //
+        // "No model is chosen" is a single fact about the colony with a single remedy. Printing it
+        // per role produced seven near-identical paragraphs at every boot, each naming capabilities
+        // the operator's model was never asked about — which is how a warning becomes wallpaper.
+        var unresolved = report.Where(f => f.Unresolved is not null).ToList();
+        if (unresolved.Count > 0)
+            output.WriteLine(
+                $"[model-fitness] {unresolved.Count} role(s) cannot run: {unresolved[0].Unresolved} "
+              + $"Affected: {string.Join(", ", unresolved.Select(f => f.RoleId))}");
+
+        foreach (var fitness in report.Where(f => !f.Fit && f.Unresolved is null))
             output.WriteLine(
                 $"[model-fitness] role '{fitness.RoleId}' is routed to {fitness.Provider}:{fitness.Model}, "
               + $"which is missing: {string.Join("; ", fitness.Unmet)}");

@@ -2710,11 +2710,14 @@ function renderStatusPop(){
     fitRow.style.display = unfit>0 ? '' : 'none';
     const fitEl = document.getElementById('sp-fitness');
     if(fitEl){
-      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot use the routed model';
+      // v0.3.8.41 — worded for BOTH causes. The count now includes roles whose route cannot
+      // resolve at all (no model chosen), and telling those operators their model "lacks a
+      // capability" sent them looking for a better model when they had not picked one.
+      fitEl.textContent = unfit+' role'+(unfit===1?'':'s')+' cannot run';
       fitEl.style.color = 'var(--amber,#f59e0b)';
-      fitEl.title = 'These roles are routed to a model missing a capability their contract needs — '
-                  + 'they will run and return empty or unusable results. Open Tools & Routing for '
-                  + 'the per-role reasons.';
+      fitEl.title = 'These roles either have no model to run on, or are routed to one missing a '
+                  + 'capability their contract needs — either way they return empty or unusable '
+                  + 'results. Open Tools & Routing for the exact reason.';
     }
   }
   const routes=s.routes||[];
@@ -4040,14 +4043,21 @@ async function loadToolsView(){
   try{
     const r=await api('/tools');
     if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load tools.')}</div>`; return; }
-    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[], unfit=fitness.filter(f=>!f.fit);
-    el.innerHTML =
-      (unfit.length
+    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[];
+    // v0.3.8.41 — an unresolved route is not an unfit model. See the Tools panel for the reasoning.
+    const unresolved=fitness.filter(f=>f.unresolved), unfit=fitness.filter(f=>!f.fit && !f.unresolved);
+    const head =
+      unresolved.length
         ? `<div class="card agentcli-card"><div class="agentcli-hd">
-             <span class="health-dot"></span><span class="agentcli-name">${unfit.length} of ${fitness.length} ants cannot use the model they are routed to</span></div>
-           <div class="agentcli-sub">${unfit.map(f=>escapeHtml(f.role)+' — '+escapeHtml((f.unmet||[]).join('; '))).join('<br>')}</div></div>`
-        : `<div class="card agentcli-card"><div class="agentcli-hd"><span class="health-dot ok"></span>
-             <span class="agentcli-name">All ${fitness.length} ants are routed to a capable model.</span></div></div>`)
+             <span class="health-dot"></span><span class="agentcli-name">${unresolved.length} of ${fitness.length} ants have no model to run on</span></div>
+           <div class="agentcli-sub">${escapeHtml(unresolved[0].unresolved)}<br>Affected: ${escapeHtml(unresolved.map(f=>f.role).join(', '))}</div></div>`
+        : unfit.length
+          ? `<div class="card agentcli-card"><div class="agentcli-hd">
+               <span class="health-dot"></span><span class="agentcli-name">${unfit.length} of ${fitness.length} ants cannot use the model they are routed to</span></div>
+             <div class="agentcli-sub">${unfit.map(f=>escapeHtml(f.role)+' — '+escapeHtml((f.unmet||[]).join('; '))).join('<br>')}</div></div>`
+          : `<div class="card agentcli-card"><div class="agentcli-hd"><span class="health-dot ok"></span>
+               <span class="agentcli-name">All ${fitness.length} ants are routed to a capable model.</span></div></div>`;
+    el.innerHTML = head
       + `<div class="card agentcli-card"><div class="agentcli-hd">
            <span class="agentcli-name">${tools.length} tools registered</span></div>
          <div class="agentcli-sub">${tools.map(t=>escapeHtml(t.name||t)).join(', ')||'None.'}</div></div>`;
@@ -8869,8 +8879,25 @@ function renderToolsPanel(d){
   // tool. In a transcript that reads as a weak model rather than as a misconfiguration an operator
   // could fix in thirty seconds. Only the misfits are listed: a table of all-green is noise, and
   // noise is what taught everyone to skim past this kind of panel.
-  const unfit=fitness.filter(f=>!f.fit);
-  const fitnessHtml = unfit.length
+  // v0.3.8.41 — UNRESOLVED is separated from UNFIT, because they are different problems.
+  //
+  // "No model is chosen" is one fact about the colony with one remedy, and it made every role look
+  // individually broken: seven rows naming capabilities the operator's model was never asked about,
+  // on a host with a perfectly good model installed. Listing it per role also buries the remedy
+  // under the symptom.
+  const unresolved=fitness.filter(f=>f.unresolved);
+  const unfit=fitness.filter(f=>!f.fit && !f.unresolved);
+
+  const unresolvedHtml = unresolved.length
+    ? `<div class="tp-alarm">
+         <div class="tp-alarm-hd">${unresolved.length} role(s) have no model to run on</div>
+         <div class="tp-alarm-row"><span class="tp-unmet">${escapeHtml(unresolved[0].unresolved)}</span></div>
+         <div class="tp-alarm-row"><span class="tp-role">Affected</span>
+           <span class="tp-model">${escapeHtml(unresolved.map(f=>f.role).join(', '))}</span></div>
+       </div>`
+    : '';
+
+  const fitnessHtml = unresolvedHtml + (unfit.length
     ? `<div class="tp-alarm">
          <div class="tp-alarm-hd">${unfit.length} role(s) routed to a model that cannot do the job</div>
          ${unfit.map(f=>`<div class="tp-alarm-row">
@@ -8879,9 +8906,9 @@ function renderToolsPanel(d){
             <span class="tp-unmet">${escapeHtml((f.unmet||[]).join(', '))}</span>
           </div>`).join('')}
        </div>`
-    : fitness.length
+    : (fitness.length && !unresolved.length)
       ? `<div class="tp-quiet">All ${fitness.length} contracted roles are routed to a capable model.</div>`
-      : '';
+      : '');
 
   // ---- tools that will not run, and why ------------------------------------
   const broken=tools.filter(t=>t.status!=='registered');

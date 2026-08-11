@@ -303,9 +303,18 @@ public static partial class ApiHost
                         {
                             ["role"] = f.RoleId,
                             ["provider"] = f.Provider,
+                            // The EFFECTIVE model — what a call would really use. v0.3.8.41. This
+                            // reported the CONFIGURED model, which is empty when nobody has chosen
+                            // one, so the console showed `ollama:` and listed capabilities that
+                            // empty string lacked.
                             ["model"] = f.Model,
                             ["fit"] = f.Fit,
                             ["unmet"] = f.Unmet,
+                            // Null unless the route cannot resolve at all. A consumer must show this
+                            // INSTEAD of `unmet`: "choose a model" and "your model lacks structured
+                            // output" are different problems, and the second is false when the first
+                            // is true.
+                            ["unresolved"] = f.Unresolved,
                         }).ToList(),
             });
         });
