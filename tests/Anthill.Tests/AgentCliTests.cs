@@ -309,6 +309,175 @@ public class AgentCliTests
         Assert.Equal(ModelCallOutcome.ConfigError, response.Status);
     }
 
+    // ---- Confinement -------------------------------------------------------------------------
+    //
+    // v0.3.8.41. AgentCliProvider has always taken a workingDirectory, documented as what keeps a
+    // writing agent inside the same boundary as every other actor. The factory — the only place
+    // production ever built one — did not pass it. Null meant ProcessStartInfo.WorkingDirectory was
+    // never set, so the agent inherited the API host's directory: the operator's live checkout.
+    //
+    // Routing an ant to Claude Code therefore handed a tool with Writes = true a shell in the source
+    // tree, going around SandboxWorkspace, WorkspacePathGuard, PatchSet review and the
+    // approve-then-apply gate in one step, and silently — Anthill never saw the edits at all.
+    //
+    // These assert the two halves separately, because they failed independently: that a writing
+    // agent REFUSES when unconfined, and that a confined one really runs in the directory it was
+    // given. Only the second is a claim about the operating system, so only it starts a process.
+
+    /// <summary>An agent that writes must not start at all when it has nowhere to be confined to.</summary>
+    [Fact]
+    public void AWritingAgentWithNoWorkspace_RefusesAndNeverStarts()
+    {
+        // A marker is the proof. Asserting the typed refusal alone would also pass if the process
+        // ran and the refusal came afterwards, which is the case that matters: an agent that writes
+        // has already written by the time it exits.
+        var marker = Path.Combine(Path.GetTempPath(), "anthill-confinement-" + Guid.NewGuid().ToString("N"));
+        var writes = Shell("writes-unconfined", Touch(marker), writes: true);
+
+        var response = new AgentCliProvider(writes).Send(ModelRequest.FromPrompt("x"));
+
+        Assert.Equal(ModelCallOutcome.ConfigError, response.Status);
+        Assert.False(File.Exists(marker), "the agent ran despite having no workspace to be confined to");
+        Assert.Contains("workspace", response.Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// An agent that only ANSWERS is not gated, because its working directory is uninteresting.
+    ///
+    /// Worth pinning: the temptation when fixing this was to refuse for every agent, which would
+    /// have broken every colony that routes a read-only agent, and would have been the wrong
+    /// analysis besides — the hazard is writing outside a boundary, not running.
+    /// </summary>
+    [Fact]
+    public void AReadOnlyAgentWithNoWorkspace_IsNotGated()
+    {
+        var reads = Shell("reads", Echo("hello"), writes: false);
+
+        var response = new AgentCliProvider(reads).Send(ModelRequest.FromPrompt("x"));
+
+        Assert.NotEqual(ModelCallOutcome.ConfigError, response.Status);
+    }
+
+    /// <summary>
+    /// A confined agent runs INSIDE the workspace. The agent is asked where it is and its own answer
+    /// is the assertion — the one fact no amount of reading the code establishes.
+    /// </summary>
+    [Fact]
+    public void AConfinedAgent_RunsInsideTheWorkspace()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "anthill-workspace-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var agent = Shell("confined", Pwd(), writes: true);
+
+            var response = new AgentCliProvider(agent, TimeSpan.FromSeconds(20), dir)
+                .Send(ModelRequest.FromPrompt("x"));
+
+            Assert.True(response.Ok, $"the agent did not run: {response.Content}");
+            // EndsWith rather than Equals: the leaf is unique, and on hosts where the temp root is a
+            // symlink the shell reports the resolved path, which is the same directory by another
+            // name and would fail an equality check for no reason anyone cares about.
+            Assert.EndsWith(Path.GetFileName(dir), response.Content.Trim(), StringComparison.Ordinal);
+        }
+        finally { try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ } }
+    }
+
+    /// <summary>
+    /// A workspace that does not exist is its own refusal, naming the directory.
+    ///
+    /// Process.Start with a missing working directory throws the same Win32Exception as a missing
+    /// binary, and this provider maps that to "the agent is not installed" — an error naming the
+    /// wrong problem and prescribing an install that would not fix it.
+    /// </summary>
+    [Fact]
+    public void AWorkspaceThatDoesNotExist_IsRefusedByName_NotReportedAsNotInstalled()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "anthill-absent-" + Guid.NewGuid().ToString("N"));
+        var agent = Shell("confined-nowhere", Echo("hi"), writes: true);
+
+        var response = new AgentCliProvider(agent, TimeSpan.FromSeconds(20), missing)
+            .Send(ModelRequest.FromPrompt("x"));
+
+        // ConfigError specifically, not NotAvailable: the distinction IS the fix.
+        Assert.Equal(ModelCallOutcome.ConfigError, response.Status);
+        Assert.Contains(missing, response.Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// THE REGRESSION TEST. The factory must pass the workspace through, and this is the assertion
+    /// that would have failed before the fix.
+    ///
+    /// Observed through behaviour rather than by reading a private field: given a workspace that
+    /// does not exist, a provider the factory built must refuse BY THAT NAME. A factory that drops
+    /// the workspace produces a provider that knows nothing about it and could not name it. That the
+    /// real agent binary is probably not installed does not matter — confinement is checked before
+    /// anything is started, which is the point.
+    /// </summary>
+    [Fact]
+    public void TheFactory_PassesTheWorkspaceToTheProvider()
+    {
+        var claimed = Path.Combine(Path.GetTempPath(), "anthill-factory-" + Guid.NewGuid().ToString("N"));
+        var agent = AgentCliCatalog.All.First(a => a.Writes);
+        var ctx = new ReasoningProviderContext(
+            agent.Id, agent.DisplayName, null, "", new StubOptions(claimed));
+
+        var response = new AgentCliProviderFactory().Create(ctx).Send(ModelRequest.FromPrompt("x"));
+
+        Assert.Equal(ModelCallOutcome.ConfigError, response.Status);
+        Assert.Contains(claimed, response.Content, StringComparison.Ordinal);
+    }
+
+    /// <summary>And with no workspace configured, the factory's provider refuses rather than roams.</summary>
+    [Fact]
+    public void TheFactory_WithNoWorkspaceConfigured_ProducesAProviderThatRefuses()
+    {
+        var agent = AgentCliCatalog.All.First(a => a.Writes);
+        var ctx = new ReasoningProviderContext(
+            agent.Id, agent.DisplayName, null, "", new StubOptions(null));
+
+        var response = new AgentCliProviderFactory().Create(ctx).Send(ModelRequest.FromPrompt("x"));
+
+        Assert.Equal(ModelCallOutcome.ConfigError, response.Status);
+        Assert.Contains("workspace", response.Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class StubOptions : IReasoningRuntimeOptions
+    {
+        private readonly string? _root;
+        public StubOptions(string? root) => _root = root;
+        public int ModelCallTimeoutSeconds => 5;
+        public string? AgentWorkspaceRoot => _root;
+    }
+
+    /// <summary>A catalogue entry backed by the platform shell, so these tests need no vendor tool.</summary>
+    private static AgentCli Shell(string id, IReadOnlyList<string> args, bool writes) => new()
+    {
+        Id = AgentCliCatalog.IdPrefix + id,
+        DisplayName = id,
+        Vendor = "test",
+        Binary = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh",
+        PromptArgs = args,
+        PackageManager = "npm",
+        Package = "n/a",
+        AuthCommand = "n/a",
+        DocsUrl = "https://example.invalid",
+        Writes = writes,
+    };
+
+    private static IReadOnlyList<string> Pwd() =>
+        OperatingSystem.IsWindows() ? new[] { "/c", "cd" } : new[] { "-c", "pwd" };
+
+    private static IReadOnlyList<string> Echo(string what) =>
+        OperatingSystem.IsWindows() ? new[] { "/c", "echo " + what } : new[] { "-c", "echo " + what };
+
+    // Quoted so a path containing a space stays one word to the shell. These are the ONE deliberate
+    // exception to "operator text never reaches a shell": the string is built here, in the test.
+    private static IReadOnlyList<string> Touch(string path) =>
+        OperatingSystem.IsWindows()
+            ? new[] { "/c", $"type nul > \"{path}\"" }
+            : new[] { "-c", $"touch '{path}'" };
+
     /// <summary>
     /// Scanning must never throw, whatever the host has or has not got. It runs behind a console
     /// poll, and a probe that threw would take the panel with it.

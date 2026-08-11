@@ -1,6 +1,6 @@
 # ANTHILL — THE PLAN
 
-**Where the colony measurably IS.** Shipping release: **v0.3.8.40** — the 3.8 line is CLOSED.
+**Where the colony measurably IS.** Shipping release: **v0.3.8.41** — the 3.8 line is CLOSED.
 The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 Two programs ran in this line and both finished. The Core/Modules refactor (v3.8.3–v3.8.18) and the
@@ -323,7 +323,7 @@ Kept because the *shape* of these mistakes recurs, and recognising the shape is 
 individual fix.
 
 **The recurring defect: a check that answers a question ADJACENT to the one asked, and passes.**
-Found eleven times.
+Found thirteen times.
 
 | # | Release | The adjacent answer |
 |---|---|---|
@@ -335,6 +335,8 @@ Found eleven times.
 | 9 | v3.8.25 → fixed v3.8.32 | The handoff gate read `!decision.Retryable` — the ant's status code — where it meant "the scheduler scheduled no retry". Tests covered "handoffs ingest on terminal failure" and "the tester emits a medic handoff" separately, never together |
 | 10 | v3.8.26 → fixed v3.8.32 | The readiness ladder asked specialist-only questions of all twelve roles. Untestable inside a route lambda, so untested |
 | 11 | v3.8.5 → fixed v3.8.32 | `CoreWithoutProviderTests` proved a typed refusal at one boundary and was allowed to stand for "a mission runs with no LLM" |
+| 12 | v0.3.8.40 → fixed v0.3.8.41 | `AgentCliProvider` took a `workingDirectory` documented as the confinement for a writing agent. Neither production caller passed it, so a `Writes = true` agent inherited the API host's directory — the live checkout — and went around `SandboxWorkspace`, the path guard, PatchSet review and the approval gate in one step. `Writes` had one consumer: a JSON field the console displays. A sweep for "is confinement implemented?" finds a documented parameter and a flag and answers yes |
+| 13 | v3.5.0 → named v0.3.8.41 | `RunAllowlistedCheckTool` resolves its workdir from whatever workspace is ambient. A tester ant runs as its own DAG task, AFTER `VerifyPatchSet` disposed the scope holding the materialised patch — so it checked the mission workspace, which has no patch in it, and "3 checks passed" was recorded as though it judged the proposal. 6b again, one layer out: the verifiers were fixed in v3.8.23 and the ant that runs the same checks was not |
 
 **The rule that came out of it:** a test for a production wiring must be keyed to a value the
 PRODUCER actually emits. The v3.8.21 tests passed the literal string `"code_patch"` — a task type

@@ -1,5 +1,81 @@
 # ANTHILL Changelog
 
+## v0.3.8.41 - the agent runs where it is told, and the model tag belongs to the provider
+
+**A writing agent was running in the operator's checkout.** `AgentCliProvider` has taken a
+`workingDirectory` since it was written, documented as what keeps a writing agent inside the same
+boundary as every other actor. Neither production caller passed it — not `AgentCliProviderFactory`,
+not the `/providers/{id}/test` endpoint. Null meant `ProcessStartInfo.WorkingDirectory` was never
+set, and a child process that is not given one inherits its parent's: the directory the API host was
+started from.
+
+So routing an ant to Claude Code handed a tool with `Writes = true` a shell in the source tree.
+`SandboxWorkspace`, `WorkspacePathGuard`, PatchSet review and the approve-then-apply gate all sit on
+a path that this went around in one step, and silently — an agent's edits were never events Anthill
+saw. `Writes` itself had one consumer: a JSON field the console displays. No call site, no feature.
+
+Not an absent feature. A feature PRESENT AND WIRED WRONG, which a sweep for "is confinement
+implemented?" answers yes to, having found a documented parameter and a flag.
+
+`IReasoningRuntimeOptions.AgentWorkspaceRoot` now carries the confinement, resolved from
+`AllowedWorkspaceRoot` — the root every other actor already uses, because one boundary is auditable
+and two are a question about which applied. Made absolute at the last point that knows the colony's
+layout, since a relative working directory resolves against the host process's directory and is the
+same bug again. Abstract rather than a defaulted interface member: a silent null is what caused
+this. An agent that writes and has nowhere to be confined REFUSES, rather than falling back to a
+temp directory whose contents nothing collects. Read-only agents are not gated; the hazard is
+writing outside a boundary, not running.
+
+**The Ollama model tag was a default for everything.** Two lines, both spelling
+`?? AnthillRuntime.OllamaModel`: `RoleRoute` defaulted a stored route's missing model, and
+`GetClient` defaulted an unknown provider's. Routing every ant to Claude Code produced
+`agent:claude-code : gemma4:31b` — an agent paired with a local model tag it has never heard of and
+cannot serve. It was never an agent problem: a keyed OpenAI route with no model carried it too, and
+the symptom reads as a display bug for a long time before anyone checks the router. The rule is now
+"is this the local provider", not "is this an agent", because the core may not know what an agent
+is. Empty means the provider decides, which is already what keyed and module-registered providers
+do. `GetClient` also stopped handing unknown providers to `LocalModelResolver`, which would have
+asked Ollama to resolve a model for Claude Code.
+
+**A test that passed for the wrong reason, found by the one that failed.** Two of the three new
+routing tests set `AnthillRuntime.OllamaModel` directly and then wrote a route — and writing a route
+is `ApplySettingsUpdate`, which ends in `ProjectConfig`, which re-reads that field from `Config`. The
+assignment was erased by the next line. They asserted `NotEqual("gemma4:31b")` against a value that
+was never `gemma4:31b`, so they agreed with the fix while testing nothing about it and would have
+passed against the unfixed router. Setup goes through settings now, and the non-local cases assert
+the model is EMPTY.
+
+**An installed agent is reported capable.** `ModelCapabilityCatalog` matches model-name fragments
+then a provider table and falls through to `TextOnly` for the unknown — right for an unknown model,
+wrong for a coding agent, and it made the boot log warn that `ui_cartographer` was routed to
+something "missing tool calling" when the thing was a tool-calling agent. `AgentCapabilityProbe`
+answers for catalogued agents and null for everything else, so Ollama's discovered capabilities are
+never overridden by a guess.
+
+**Agents install without root.** `npm install -g` targets `/usr/lib/node_modules`, which is
+root-owned, so every install failed with EACCES and the remedy on offer was "be root". The catalogue
+now declares a package manager and a package rather than a verbatim command line, and the installer
+chooses the destination: `~/.anthill/agents`. Discovery searches there before PATH, because agents
+installed outside the global prefix are deliberately not on it — installing successfully and then
+reporting as missing is the worst of both.
+
+**A check result now names the tree it judged.** `RunAllowlistedCheckTool` resolves its working
+directory from whatever workspace is ambient, and a mission has two at different moments: the
+mission workspace, which is the source as the coder left it, and the disposable tree
+`VerifyPatchSet` materialises a patch set into. Only the second contains the proposal. A tester ant
+runs as its own task in the DAG, after that scope is disposed — so it resolved to the first, and "3
+checks passed" was recorded as though it said something about the patch. `MissionWorkspace` now
+records `MaterializedPatchSetId` and the tester's report names the tree, patched or not.
+
+This does not move the tester onto the patched tree, and this entry says so rather than implying
+otherwise: that requires the patch to outlive `VerifyPatchSet`'s sandbox, which is a lifecycle change
+to the most safety-critical path in the repository and is not in this release.
+
+**Console.** The model chip groups by PROVIDER before model, so a colony entirely on Claude Code
+with stale model strings no longer reports "2 models". `install_dir` moved to the top level of
+`/agents`, where the console was already reading it — it was emitted per-agent, so the line telling
+an operator where their agents went never rendered.
+
 ## v0.3.8.40 - the colony delegates, and says what it is waiting for
 
 **Installed CLI agents became reasoning providers.** Claude Code, Codex, Gemini CLI, Aider and
