@@ -150,6 +150,31 @@ public class ConversationRunnerTests : IDisposable
         Assert.Null(uncounted.CompletionTokens);
     }
 
+    /// <summary>
+    /// v0.3.8.46, found live: an answer the operator gives is RECORDED when given, not only if
+    /// some tool consults it. The trap: an operator approved a refused action, the re-run mission
+    /// planned differently and never asked again, the approval evaporated unrecorded — and the
+    /// stale refusal kept the conversation in "waiting on you" forever.
+    /// </summary>
+    [Fact]
+    public void AnAnswerTheOperatorGives_IsRecordedWhetherOrNotTheWorkConsultsIt()
+    {
+        var chat = Chat();
+        // The earlier refusal that put the action on the waiting list.
+        _memory.SaveEscalationDecision(EscalationGate.Evaluate(chat, "run_allowlisted_check"));
+        Assert.Contains("run_allowlisted_check", ConversationStateReader.Read(_memory, "c1").WaitingOn);
+
+        var answers = Approve();
+        answers["run_allowlisted_check"] = "approve";
+        Runner().Run(chat, "go", ConversationMode.Mission, answers);
+
+        // The approval exists in the record even though no tool asked for it — and the waiting
+        // list clears, because the operator has answered.
+        var decisions = _memory.LoadEscalationDecisions("c1");
+        Assert.Contains(decisions, d => d.Action == "run_allowlisted_check" && d.Allowed);
+        Assert.DoesNotContain("run_allowlisted_check", ConversationStateReader.Read(_memory, "c1").WaitingOn);
+    }
+
     /// <summary>A runtime composed without reasoning says so — it does not spin, and it does not
     /// pretend. The message is still recorded; history survives the missing capability.</summary>
     [Fact]

@@ -227,6 +227,19 @@ public sealed class ConversationRunner
             answers?.GetValueOrDefault(StartMissionAction));
         try { _memory.SaveEscalationDecision(decision); } catch { }
 
+        // v0.3.8.46, found live: every OTHER answer the operator gave is recorded NOW, not only
+        // if some tool happens to consult it. The old shape left a trap — an operator approved a
+        // refused action, the re-run mission planned differently and never asked again, the
+        // approval evaporated unrecorded, and the stale refusal kept the conversation in
+        // "waiting on you" forever. An answer given IS an operator decision; the record must say
+        // so whether or not the work ends up needing it.
+        foreach (var (action, answer) in answers ?? new Dictionary<string, string>())
+        {
+            if (action == StartMissionAction || string.IsNullOrWhiteSpace(action)) continue;
+            try { _memory.SaveEscalationDecision(EscalationGate.Evaluate(conversation, action, answer)); }
+            catch { }
+        }
+
         if (!decision.Allowed)
         {
             // The turn is recorded even though nothing ran. An attempt to escalate that was refused
