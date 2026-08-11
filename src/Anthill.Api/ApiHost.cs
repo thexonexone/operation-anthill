@@ -428,6 +428,27 @@ public sealed class AttachmentBody
     public string? Content { get; set; }
 }
 
+/// <summary>v0.3.8.48: create or update a project schedule. Null on PATCH = leave unchanged.</summary>
+public sealed class ScheduleRequest
+{
+    public string? Name { get; set; }
+    public string? Prompt { get; set; }
+    public string? Trigger { get; set; }
+    public string? Cron { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("one_time_at")]
+    public string? OneTimeAt { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("local_time")]
+    public string? LocalTime { get; set; }
+    public string? Timezone { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("approval_mode")]
+    public string? ApprovalMode { get; set; }
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+    public bool? Enabled { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("overlap_policy")]
+    public string? OverlapPolicy { get; set; }
+}
+
 /// <summary>v0.3.8.47: import a transcript. Turns become history; nothing is invented for them.</summary>
 public sealed class ImportRequest
 {
