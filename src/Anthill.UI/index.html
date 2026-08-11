@@ -2067,6 +2067,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="page-hdr">
           <div><h1>Objectives</h1><div class="sub">Every autonomous objective by lifecycle lane — expand a card for its runs, missions, tasks, and patches.</div></div>
           <div style="display:flex;gap:8px;align-items:center;">
+            <label class="sr-only" for="obj-filter-project">Filter by project</label>
+            <select class="provider-input" id="obj-filter-project" style="width:180px;font-size:10px;"><option value="">All projects</option></select>
+            <label class="sr-only" for="obj-filter-search">Search objectives</label>
+            <input class="provider-input" id="obj-filter-search" type="search" placeholder="Search…" style="width:160px;font-size:10px;">
             <span class="hud-hd-sub" id="ob-count"></span>
             <button class="btn btn-ghost" id="ob-refresh">↺ Refresh</button>
           </div>
@@ -2997,10 +3001,6 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="margin-bottom:16px;">
           <div class="box-toggle-head" data-onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
             <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
-            <label class="sr-only" for="obj-filter-project">Filter by project</label>
-            <select class="provider-input" id="obj-filter-project" style="width:180px;font-size:10px;"><option value="">All projects</option></select>
-            <label class="sr-only" for="obj-filter-search">Search objectives</label>
-            <input class="provider-input" id="obj-filter-search" type="search" placeholder="Search…" style="width:160px;font-size:10px;">
             <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
           <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">

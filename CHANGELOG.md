@@ -39,6 +39,16 @@ selector per role listing only models that can actually run, saving through a me
 single-role endpoint; the prose route parser is gone. And the small dignities: the mojibake
 question marks became the arrows and checks they were, and every login label claims its input.
 
+**Found by the final live walkthrough.** Three defects the running console confessed to: the
+objectives project filter and search had been built into the hidden legacy page instead of the
+live board, so the board they filter never showed them — moved where the operator actually is;
+approving a refused start_mission re-sent the same message and the transcript said the operator
+spoke twice — the refused attempt IS the turn, and approval now links the mission to it instead
+of inventing a duplicate; and a settled mission's answer sat in mission history while the chat
+that started it showed nothing — the pipeline's result is now recorded as the conversation's
+next turn (a cancelled conversation still gets no late answer), which also makes schedule runs
+readable end to end: the prompt asked, the answer beneath it.
+
 ## v0.3.8.47 - projects, attachments, and a chat that finally looks the part
 
 **Projects are real.** One per CONVERSATION — created at conversation start, never per message —
