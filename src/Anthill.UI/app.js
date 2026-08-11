@@ -400,7 +400,7 @@ const PAGE_TITLES = {
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
   activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Agents'   // v3.8.39: installable CLI agents
+  agentcli:'Agents', chat:'Chat'   // v3.8.39: installable CLI agents; chat-first surface
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -415,9 +415,14 @@ PAGE_ENTER['overview']=()=>{
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
 PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli(); };
+PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
+  document.getElementById('chat-input')?.focus(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
 const IAICON = {
+  // v3.8.39: without an entry here buildNav writes the string "undefined" into the nav icon,
+  // because it interpolates IAICON[d.id] unguarded.
+  chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>',
   dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
   monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
@@ -429,6 +434,8 @@ const IAICON = {
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
 const IA = [
+  // v3.8.39: the conversation is the product's primary act, so it leads the navigation.
+  { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
   { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
     { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
@@ -1837,10 +1844,11 @@ function topologyMountTo(where){
   topologyCaptureHome();
   let target=null;
   if(where==='dashboard') target=document.getElementById('ws-topology');
+  else if(where==='chat') target=document.getElementById('chat-colony-mount');   // v3.8.39
   else if(topologyHome) target=topologyHome.parent;
   if(!target) return;
   if(area.parentElement===target && where===topologyHost) return;   // already correct: no churn
-  if(where==='dashboard') target.appendChild(area);
+  if(where==='dashboard'||where==='chat') target.appendChild(area);
   else target.insertBefore(area, topologyHome.next);
   topologyHost=where;
   topologyRemeasure();
@@ -3786,6 +3794,122 @@ async function loadAntObsDirectory(grid){
       `<div style="grid-column:1/-1;margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.08em;">COLONY DIRECTORY · ${total} ants — every registered role and worker with its duty</div>`+html);
   }catch(e){ /* directory is additive; telemetry cards above still render */ }
 }
+/* ── Chat-first surface (v3.8.39) ─────────────────────────────────────────────────────────────
+ *
+ * The conversation as the application, rather than a widget on a grid the operator has to learn
+ * first. Same endpoints the Conversations panel already uses — /conversations, /{id},
+ * /{id}/turns — because the escalation gate, the approval policy and the mission handoff are
+ * already right there and a second client for them would be a second thing to keep true.
+ *
+ * The colony is available BESIDE the conversation rather than instead of it. Watching the ants is
+ * the thing an operator wants occasionally and a newcomer wants never, so it is a toggle rather
+ * than the landing view.
+ */
+let chatActiveId = null;
+let chatColonyOpen = false;
+
+function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
+
+async function loadChat(){
+  const list=document.getElementById('chat-conv-list'); if(!list) return;
+  try{
+    const r=await api('/conversations');
+    if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load conversations.')}</div>`; return; }
+    const convs=(r.data&&r.data.conversations)||[];
+    if(!convs.length){
+      list.innerHTML='<div class="hud-state">Nothing yet — your first message starts one.</div>';
+    }else{
+      list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
+        ${escapeHtml(c.title||'Conversation')}
+        ${c.doing?`<span class="attn">Working…</span>`:''}
+      </div>`).join('');
+      list.querySelectorAll('.chat-conv').forEach(el=>
+        el.addEventListener('click',()=>chatOpen(el.dataset.id)));
+      if(!chatActiveId) chatOpen(convs[0].id);
+    }
+  }catch(e){ pollWarnOnce('loadChat', e); }
+}
+
+async function chatOpen(id){
+  if(!id) return;
+  chatActiveId=id;
+  const thread=document.getElementById('chat-thread'); if(!thread) return;
+  try{
+    const r=await api('/conversations/'+encodeURIComponent(id));
+    if(!r||!r.success){ thread.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not open that conversation.')}</div>`; return; }
+    const d=r.data||{}, turns=d.turns||[];
+
+    // Only the operator's own words are theirs; everything else is the colony speaking, whichever
+    // ant or provider produced it. Labelling each turn by its role would make the reader learn the
+    // roster before they can read the answer.
+    thread.innerHTML = turns.length
+      ? turns.map(t=>{
+          const mine=String(t.role||'').toLowerCase()==='user';
+          return `<div class="chat-turn ${mine?'user':'colony'}">
+            <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>${escapeHtml(t.content||'')}
+          </div>`;
+        }).join('')
+      : '<div class="hud-state">No messages yet.</div>';
+    thread.scrollTop = thread.scrollHeight;
+
+    setEl('chat-title', d.title || 'Conversation');
+    chatSetState(d.needs_operator ? 'Waiting on you' : (d.doing ? 'Working…' : ''));
+    document.querySelectorAll('.chat-conv').forEach(el=>
+      el.classList.toggle('active', el.dataset.id===id));
+  }catch(e){ pollWarnOnce('chatOpen', e); }
+}
+
+async function chatSend(){
+  const el=document.getElementById('chat-input');
+  const msg=(el&&el.value||'').trim();
+  if(!msg) return;
+  if(el){ el.value=''; el.style.height=''; }
+  chatSetState('Sending…');
+  try{
+    if(!chatActiveId){
+      // First message creates the conversation. 'ask' is the policy a newcomer wants: the colony
+      // checks before it does anything that changes real files.
+      const c=await api('/conversations','POST',{ title: msg.slice(0,48), policy:'ask' });
+      if(!c||!c.success){ chatSetState((c&&c.message)||'Could not start.'); return; }
+      chatActiveId=c.data.id;
+    }
+    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:'chat' });
+    if(r&&r.data&&r.data.started===false) chatSetState(r.data.summary||'Refused');
+    else chatSetState('');
+  }catch(e){ chatSetState('Could not send: '+(e.message||'')); }
+  finally{ apiCacheBust('/conversations'); loadChat(); chatOpen(chatActiveId); }
+}
+
+function chatToggleColony(open){
+  const side=document.getElementById('chat-side'); if(!side) return;
+  chatColonyOpen = open===undefined ? !chatColonyOpen : !!open;
+  side.hidden = !chatColonyOpen;
+  if(chatColonyOpen && typeof topologyMountTo==='function') topologyMountTo('chat');
+  else if(typeof topologyMountTo==='function') topologyMountTo('home');
+}
+
+document.getElementById('chat-send')?.addEventListener('click', chatSend);
+document.getElementById('chat-new')?.addEventListener('click', ()=>{
+  chatActiveId=null;
+  setEl('chat-title','New conversation'); chatSetState('');
+  const thread=document.getElementById('chat-thread');
+  if(thread) thread.innerHTML='<div class="chat-welcome"><h2>What would you like done?</h2>'
+    + '<p>Describe it in your own words. The colony plans the work, carries it out, and shows you '
+    + 'every step — you approve anything that changes real files.</p></div>';
+  document.getElementById('chat-input')?.focus();
+  loadChat();
+});
+document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
+document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
+document.getElementById('chat-input')?.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); chatSend(); }
+});
+// Grow with the message rather than scrolling a one-line box — a multi-step request is normal here.
+document.getElementById('chat-input')?.addEventListener('input', e=>{
+  e.target.style.height='auto';
+  e.target.style.height=Math.min(e.target.scrollHeight,180)+'px';
+});
+
 /* ── Coding agents (v3.8.39) ──────────────────────────────────────────────────────────────────
  *
  * Installable CLI agents the colony can delegate a turn to. Two facts are shown separately for
@@ -4419,8 +4543,10 @@ function restoreLayout(){
       if(r && !canSee(r.vis)){ go('/dashboard',false); return; }
       go(PAGE_HOME[last],false); return;
     }
-    go('/dashboard',false);
-  }catch{ try{ showPage('overview'); }catch{} }
+    // v3.8.39: a first-time operator lands in the conversation rather than on a grid of
+    // widgets. Anyone with a remembered page keeps it — that branch is above and untouched.
+    go('/chat',false);
+  }catch{ try{ showPage('chat'); }catch{} }
 }
 
 // -- Card collapse --------------------------------------------------------------
