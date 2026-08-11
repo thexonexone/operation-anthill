@@ -97,4 +97,52 @@ public class ProjectTests : IDisposable
         Assert.Contains("/repos/anthill", seen);
         Assert.Contains("operator describes its purpose", seen);
     }
+
+    /// <summary>
+    /// v0.3.8.47: an attachment rides its turn — stored against it, and fed to the model framed
+    /// as an operator-provided file. Binary and size rules live at the API; storage just keeps
+    /// what it is given faithfully.
+    /// </summary>
+    [Fact]
+    public void AnAttachment_RidesItsTurn_IntoStorageAndThePrompt()
+    {
+        using var memory = Memory();
+        var conversation = new Conversation { Id = "c1" };
+        memory.SaveConversation(conversation);
+
+        string? seen = null;
+        new ConversationRunner(memory, (_, _, _) => "unused",
+                ask: (prompt, _) => { seen = prompt;
+                    return new ConversationReply(true, "read it", "local", "llama", null); })
+            .Run(conversation, "summarize this file",
+                attachments: new[] { ("notes.md", "# Notes\nthe colony hums") });
+
+        var userTurn = memory.LoadConversationTurns("c1")[0];
+        var stored = Assert.Single(memory.LoadTurnAttachments(userTurn.Id));
+        Assert.Equal("notes.md", stored.Filename);
+        Assert.Contains("the colony hums", stored.Content);
+
+        Assert.Contains("Operator attached \"notes.md\"", seen);
+        Assert.Contains("the colony hums", seen);
+    }
+
+    /// <summary>
+    /// The console reaches every surface this feature shipped — a projects API with no caller is
+    /// the "no call site, no feature" defect this suite exists to catch.
+    /// </summary>
+    [Fact]
+    public void TheProjectSurfaces_AreWiredIntoTheConsole()
+    {
+        var js = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "app.js"));
+        var html = File.ReadAllText(Path.Combine(SourceText.RepoRoot(), "src", "Anthill.UI", "index.html"));
+
+        foreach (var stem in new[] { "'/projects'", "'/conversations/import'" })
+            Assert.Contains(stem, js);
+        // Attachments: staged client-side with the same limits the API enforces, said out loud.
+        Assert.Contains("chatStageFiles", js);
+        Assert.Contains("262144", js);
+        Assert.Contains("id=\"chat-attach\"", html);
+        // Import parses client-side so a bad file fails with words, not a 400.
+        Assert.Contains("id=\"chat-import\"", html);
+    }
 }
