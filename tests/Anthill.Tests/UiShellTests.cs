@@ -1172,6 +1172,30 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.46: syntax highlighting is home-grown (no framework, no CDN — the brief's rule) and
+    /// STRUCTURALLY escape-first: the tokenizer's one output function passes every character
+    /// through escapeHtml before wrapping, so highlighting can change how code looks and never
+    /// what is allowed to render. A tokenizer failure falls back to the plain escaped text.
+    /// </summary>
+    [Fact]
+    public void SyntaxHighlighting_IsEscapeFirst_AndSelfContained()
+    {
+        var js = Ui("app.js");
+
+        // The fenced-code path renders through the highlighter, which receives the language tag.
+        Assert.Contains("chatHighlight(code,lang)", js);
+        var hl = BodyOf(js, "function chatHighlight(code, lang)");
+        // The single output seam: markup is only ever wrapped AROUND escaped text.
+        Assert.Contains("out+=cls?'<span class=\"'+cls+'\">'+escapeHtml(text)+'</span>':escapeHtml(text);", hl);
+        // Failure is the old behaviour, not a broken bubble.
+        Assert.Contains("catch(e){ return escapeHtml(code); }", hl);
+        // No third-party highlighter smuggled in later.
+        Assert.DoesNotContain("highlight.js", js);
+        Assert.DoesNotContain("hljs", js);
+        Assert.DoesNotContain("prismjs", js, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces — per-mission
     /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.

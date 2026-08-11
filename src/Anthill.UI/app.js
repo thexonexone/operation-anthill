@@ -4059,12 +4059,62 @@ function chatRenderContent(text){
   let html='';
   for(let i=0;i<parts.length;i++){
     if(i%2===0){ html+=escapeHtml(parts[i]); continue; }
-    // Odd segments are fenced. The first line may be a language tag; it is dropped from display.
+    // Odd segments are fenced. The first line may be a language tag; it names the highlighter.
     const nl=parts[i].indexOf('\n');
+    const lang=nl>=0?parts[i].slice(0,nl).trim().toLowerCase():'';
     const code=nl>=0?parts[i].slice(nl+1):parts[i];
-    html+='<pre class="chat-code"><code>'+escapeHtml(code)+'</code></pre>';
+    html+='<pre class="chat-code"><code>'+chatHighlight(code,lang)+'</code></pre>';
   }
   return html;
+}
+
+/* v0.3.8.46 — syntax highlighting with no third-party code (UI-ALIGNMENT-BRIEF §0: no framework,
+ * no bundler; CSP script-src 'self'). A single-pass tokenizer: comments, strings, numbers and a
+ * per-language keyword set. THE SAFETY PROPERTY IS STRUCTURAL — every character of output passes
+ * through escapeHtml before any markup is added around it, so highlighting can only ever change
+ * how text looks, never what is allowed to render. An unknown language falls back to a generic
+ * set; a failure to tokenize falls back to the plain escaped text it always was. */
+const HL_KEYWORDS={
+  js:'const let var function return if else for while do switch case default break continue new class extends import export from async await try catch finally throw typeof instanceof this null undefined true false yield of in delete void static get set',
+  py:'def return if elif else for while import from as class try except finally with lambda pass break continue global nonlocal yield raise assert del not and or is in None True False async await self print',
+  cs:'using namespace class struct record interface enum public private protected internal static readonly const void int long double string bool char var new return if else for foreach while do switch case default break continue try catch finally throw null true false async await this base override virtual abstract sealed partial get set is as out ref where',
+  sh:'if then else elif fi for while until do done case esac function echo exit return local export set unset cd source sudo',
+  sql:'select from where insert into values update delete create drop alter table index view join left right inner outer full on group by order having limit offset as distinct and or not null is primary key foreign references union all exists between like',
+};
+const HL_ALIAS={ javascript:'js', ts:'js', typescript:'js', jsx:'js', tsx:'js', json:'js', node:'js',
+  python:'py', python3:'py', csharp:'cs', 'c#':'cs', java:'cs', cpp:'cs', c:'cs', go:'cs', rust:'cs',
+  bash:'sh', shell:'sh', zsh:'sh', console:'sh', powershell:'sh', ps1:'sh', yaml:'sh', yml:'sh' };
+function chatHighlight(code, lang){
+  try{
+    const fam=HL_KEYWORDS[lang]?lang:(HL_ALIAS[lang]||null);
+    const kw=new Set(((fam&&HL_KEYWORDS[fam])||'').split(' ').filter(Boolean));
+    const hashComments=fam==='py'||fam==='sh'||fam===null;
+    const slashComments=fam==='js'||fam==='cs'||fam===null;
+    // One scanner, char by char: no regex backtracking surprises on model-generated code.
+    let out='', i=0; const s=String(code);
+    const push=(cls,text)=>{ out+=cls?'<span class="'+cls+'">'+escapeHtml(text)+'</span>':escapeHtml(text); };
+    while(i<s.length){
+      const c=s[i];
+      if(slashComments&&c==='/'&&s[i+1]==='/'){ let j=s.indexOf('\n',i); if(j<0)j=s.length; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(slashComments&&c==='/'&&s[i+1]==='*'){ let j=s.indexOf('*/',i+2); j=j<0?s.length:j+2; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(hashComments&&c==='#'){ let j=s.indexOf('\n',i); if(j<0)j=s.length; push('hl-c',s.slice(i,j)); i=j; continue; }
+      if(c==='"'||c==="'"||c==='`'){
+        let j=i+1; while(j<s.length&&(s[j]!==c||s[j-1]==='\\')){ j++; }
+        push('hl-s',s.slice(i,Math.min(j+1,s.length))); i=j+1; continue;
+      }
+      if(/[0-9]/.test(c)&&!/[A-Za-z0-9_]/.test(s[i-1]||'')){
+        let j=i; while(j<s.length&&/[0-9._xA-Fa-f]/.test(s[j])) j++;
+        push('hl-n',s.slice(i,j)); i=j; continue;
+      }
+      if(/[A-Za-z_]/.test(c)){
+        let j=i; while(j<s.length&&/[A-Za-z0-9_]/.test(s[j])) j++;
+        const word=s.slice(i,j);
+        push(kw.has(fam==='sql'?word.toLowerCase():word)?'hl-k':null, word); i=j; continue;
+      }
+      push(null,c); i++;
+    }
+    return out;
+  }catch(e){ return escapeHtml(code); }
 }
 
 /* v0.3.8.46: a turn's recorded time, briefly. Today shows the clock; older shows the date too.
