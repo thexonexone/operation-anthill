@@ -1290,10 +1290,11 @@ public class UiShellTests
         // The poll runs only while the Chat page is on screen.
         Assert.Contains("page-chat')?.classList.contains('active')", js);
 
-        // Escape-first code rendering: the only unescaped structure is the pre/code wrapper.
+        // Escape-first code rendering: prose escapes directly; fenced code goes through the
+        // highlighter, whose escape-first structure SyntaxHighlighting_IsEscapeFirst pins.
         var render = BodyOf(js, "function chatRenderContent(text)");
         Assert.Contains("escapeHtml(parts[i])", render);
-        Assert.Contains("'<pre class=\"chat-code\"><code>'+escapeHtml(code)", render);
+        Assert.Contains("'<pre class=\"chat-code\"><code>'+chatHighlight(code,lang)", render);
 
         // Up-arrow recall only into an EMPTY composer.
         Assert.Contains("e.key==='ArrowUp' && chatLastSent && !e.target.value", js);
