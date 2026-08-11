@@ -4020,7 +4020,7 @@ async function loadChat(){
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
-        <button class="conv-pin${c.pinned?' pinned':''}" data-pin-id="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
+        <button class="conv-pin${c.pinned?' pinned':''}" data-pin="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
           title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
           aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?'★':'☆'}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
@@ -4032,7 +4032,7 @@ async function loadChat(){
       list.querySelectorAll('.conv-pin').forEach(el=>
         el.addEventListener('click', async e=>{
           e.stopPropagation();
-          const id=el.dataset.pinId, was=el.dataset.pinned==='1';
+          const id=el.dataset.pin, was=el.dataset.pinned==='1';
           const r2=await api('/conversations/'+encodeURIComponent(id)+(was?'/unpin':'/pin'),'POST');
           if(r2&&r2.success) loadChat();
         }));

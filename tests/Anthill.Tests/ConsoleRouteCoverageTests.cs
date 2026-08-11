@@ -45,7 +45,6 @@ public class ConsoleRouteCoverageTests
         ["/schema"] = "plain-text schema dump for support and CI; the console shows what it means instead",
         ["/selftest"] = "CI and support diagnostic; a failing self-test surfaces through /config/health",
         ["/runtime/inventory"] = "the generated declaration/call-site audit CI gates on; not operator-facing",
-        ["/readiness/attest"] = "POST paired with the readiness report; no reader until that report has a UI",
 
         // --- superseded by a richer surface the console already uses -----------------------------
         ["/tasks"] = "plain-text task metrics; the console reads per-mission tasks from /missions/*",
