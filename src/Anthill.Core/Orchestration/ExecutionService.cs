@@ -959,6 +959,10 @@ public sealed class ExecutionService : IExecutionService
                 SourceRoot = AnthillRuntime.AllowedWorkspaceRoot,
                 BaseRevision = materialized.BaseRevision,
                 State = Workspaces.WorkspaceState.Active,
+                // v0.3.8.41 — this tree CONTAINS the patch, and now says so. Anything running a
+                // check here can distinguish it from the MISSION workspace, which is the same source
+                // WITHOUT the proposal in it and is what a tester ant resolves to instead.
+                MaterializedPatchSetId = patchSet.Id,
             });
 
             // v3.8.22: one request PER PROPOSAL, carrying the change. v3.8.21 sent a single request
