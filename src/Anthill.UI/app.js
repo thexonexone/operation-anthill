@@ -2634,6 +2634,17 @@ function renderStatusPop(){
     or===true?(modelOk?'var(--green)':'var(--amber,#f59e0b)'):or===false?'var(--red)':'var(--dim)';
   setEl('sp-ollama-host',s.ollama_host||'—');
   setEl('sp-mode',(s.routing_mode||'—')+(s.providers_configured?` · ${s.providers_configured} provider(s) connected`:''));
+  // v0.3.8.40: deployment mode, with its reason on hover and whether it was detected or set.
+  // "Desktop" and "Server" are what the operator sees; deployment_mode is the wire value.
+  const depMode=(s.deployment_mode||'').toLowerCase();
+  const depEl=document.getElementById('sp-deployment');
+  if(depEl){
+    depEl.textContent = depMode==='server' ? 'Server / container'
+                      : depMode==='desktop' ? 'Desktop'
+                      : '—';
+    depEl.title = (s.deployment_reason||'')
+                + (s.deployment_detected===false ? '' : ' (detected — set deployment_mode in configuration to override)');
+  }
   setEl('sp-default',s.default_model||'—');
   // v3.8.34: roles routed to a model that cannot meet their contract. Reported here because the
   // only other surface is the Tools & Routing widget, which ships hidden — so on a default
