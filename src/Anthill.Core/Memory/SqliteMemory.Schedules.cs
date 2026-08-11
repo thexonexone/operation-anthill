@@ -97,7 +97,7 @@ public sealed partial class SqliteMemory
             using var conn = Connect();
             NonQuery(conn, null,
                 @"INSERT OR REPLACE INTO schedule_runs
-                    (id, schedule_id, project_id, conversation_id, status, "trigger", summary,
+                    (id, schedule_id, project_id, conversation_id, status, ""trigger"", summary,
                      started_at, finished_at)
                   VALUES (@id, @sid, @pid, @cid, @status, @trig, @summary, @started, @finished)",
                 ("@id", run.Id), ("@sid", run.ScheduleId), ("@pid", run.ProjectId),
