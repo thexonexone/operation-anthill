@@ -697,6 +697,42 @@ public static partial class ApiHost
         app.MapPost("/providers/{provider}/test", (HttpContext ctx, string provider) =>
         {
             var auth = RequireAuth(ctx, "manage_providers"); if (auth is not null) return auth;
+
+            /*
+             * v3.8.39 — an installed CLI agent is testable too.
+             *
+             * This gated on KeyedProviders, which is the set of providers holding an API KEY. An
+             * agent holds none — the operator signed into the vendor's own tool — so agents failed
+             * here with "Unknown provider", and an operator could ROUTE an ant to Claude Code but
+             * could not check it worked first. Selecting something you cannot verify is exactly
+             * when a Test button matters.
+             *
+             * Handled before NormalizeProvider, which lowercases and trims for the credential
+             * store's benefit and has no business rewriting a namespaced agent id.
+             */
+            if (AgentCliCatalog.IsAgentId(provider))
+            {
+                if (Queen.Router is null)
+                    return ApiJson.Error("Model routing is disabled for this colony.", "bad_request");
+
+                var agent = AgentCliCatalog.ById(provider);
+                if (agent is null) return ApiJson.Error($"No such agent: {provider}.", "not_found");
+
+                var agentReply = Queen.Router.GetClientForProvider(agent.Id, agent.DisplayName)
+                    .Generate("Reply with the single word: OK", retries: 1);
+
+                // Deliberately NOT recorded through SetProviderVerification. That table is the
+                // credential store's view of a keyed provider, and an agent has no row in it —
+                // writing one would invent a credential Anthill does not hold and never will.
+                return agentReply.Ok
+                    ? ApiJson.Ok(new Dictionary<string, object?>
+                    {
+                        ["provider"] = agent.Id,
+                        ["reply"] = agentReply.Content,
+                    }, $"{agent.DisplayName} answered.")
+                    : ApiJson.Error(agentReply.Content, "provider_test_failed");
+            }
+
             var p = SqliteMemory.NormalizeProvider(provider);
             if (!ProviderCatalog.KeyedProviders.Contains(p))
                 return ApiJson.Error($"Unknown provider '{p}'.", "bad_request");
