@@ -5,7 +5,10 @@ The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 
 > v0.3.8.46: conversation search (server-side, over titles and transcript content), pinned
 > conversations (stored, restart-safe, recency-beating), and markdown export with the decision
-> log included — the chat items from the maturation directive, each backed by the store.
+> log included — the chat items from the maturation directive, each backed by the store. The
+> UI gap ledger emptied too: plan preview in chat's gate, the shadow judgment queue with its
+> form, the Readiness page (snapshot, attestation, certification, report, introspection), and
+> source quality on Memory & Signals.
 
 > v0.3.8.45: Chat + Colony became a SPLIT page on the field's verdict — the desktop tester could
 > not see the colony (it drew, centred, under the opaque floating conversation panel) and the

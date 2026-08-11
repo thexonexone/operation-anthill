@@ -22,6 +22,21 @@ rows the detail endpoint serves — turns with provider and model, escalation ma
 decision log, refusals included, because an exported audit missing its permissions record is
 half an audit. The console's ⇩ Export button downloads it through the authenticated endpoint.
 
+**The UI gap ledger, emptied.** Since v0.3.8.35 the route-coverage guard has kept a written list
+of endpoints that compute results nobody can see. All five entries close in this release. The
+`/missions/plan` dry run renders inside chat's escalation gate — the task list, which ant takes
+each step, and which steps dispatch would refuse, shown at the moment of the yes/no it informs.
+The shadow judgment queue is now visible with its form attached: `/shadow/json` carries the
+pending recommendations themselves (an operator was being asked to clear a queue they could only
+count), and four checkboxes plus a note feed `/shadow/judge` to turn a recommendation into a
+scoreable pair. A new Administration → Readiness page renders the qualification snapshot with
+failures first, takes attestations, downloads the certification (truthful even when unready),
+and writes the qualification report; the colony's introspection — tiers, switches, stops,
+config findings — shares the page. And research source-quality trails, recorded since v2.x,
+finally show on Memory & Signals. The gaps-stay-visible guard retired exactly as its own failure
+message instructed, replaced by its inverse: the surfaces must stay reachable, or the ledger
+reopens loudly.
+
 ## v0.3.8.45 - chat and colony split the page, because the field said so twice
 
 **The layered Chat + Colony view is retired by its own users.** The desktop tester's report —
