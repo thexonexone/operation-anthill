@@ -152,6 +152,19 @@ public sealed class AgentCliProviderFactory : IReasoningProviderFactory
             ?? throw new InvalidOperationException(
                 $"CanServe said yes to '{context.ProviderId}' and Create found no such agent — the two disagree.");
 
-        return new AgentCliProvider(agent);
+        // v3.8.39 — honour the operator's configured per-call deadline instead of a private default.
+        //
+        // This shipped with a hardcoded ten minutes, and the first live test found why that is
+        // wrong: `opencode run` did not return, and the request sat for the full ten minutes with
+        // nothing an operator could do but wait. `ModelCallTimeoutSeconds` is read on every request
+        // precisely so a colony can bound a slow provider, and a provider that ignores it is a
+        // setting that silently does nothing — the exact failure IReasoningRuntimeOptions was
+        // introduced to prevent.
+        //
+        // Agents are slower than an HTTP call, so the configured value is the FLOOR of a longer
+        // allowance rather than the value itself: a real coding turn legitimately runs for minutes,
+        // and an operator's 120s HTTP deadline would abort work that was going fine.
+        var seconds = Math.Max(context.Options.ModelCallTimeoutSeconds, 1);
+        return new AgentCliProvider(agent, TimeSpan.FromSeconds(seconds * 4));
     }
 }

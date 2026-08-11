@@ -718,7 +718,20 @@ public static partial class ApiHost
                 var agent = AgentCliCatalog.ById(provider);
                 if (agent is null) return ApiJson.Error($"No such agent: {provider}.", "not_found");
 
-                var agentReply = Queen.Router.GetClientForProvider(agent.Id, agent.DisplayName)
+                /*
+                 * Bounded SHORT, and built directly rather than through the router.
+                 *
+                 * A connection test answers one question — "can I reach this right now" — and must
+                 * come back while the operator is still looking at the button. A mission turn is a
+                 * different question with a legitimately different bound: a coding agent editing
+                 * files runs for minutes, so the routed provider allows that.
+                 *
+                 * Found live: `opencode run` did not return, and this endpoint had inherited the
+                 * mission-length allowance, so Test hung with the request still open on the server.
+                 * Thirty seconds is long enough for any agent that is going to answer at all and
+                 * short enough that a hung one reports rather than pins a request.
+                 */
+                var agentReply = new AgentCliProvider(agent, TimeSpan.FromSeconds(30))
                     .Generate("Reply with the single word: OK", retries: 1);
 
                 // Deliberately NOT recorded through SetProviderVerification. That table is the

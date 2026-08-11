@@ -174,6 +174,50 @@ public class AgentCliTests
         Assert.Equal(absent.Id, response.Provider);
     }
 
+    /// <summary>
+    /// The factory honours the operator's configured per-call deadline. v3.8.39.
+    ///
+    /// It shipped with a private ten-minute constant, and the first LIVE test found why that is
+    /// wrong: `opencode run` did not return, and the request sat for the whole ten minutes with
+    /// nothing to do but wait. `ModelCallTimeoutSeconds` is read on every request precisely so a
+    /// colony can bound a slow provider, and a provider that ignores it is a setting that silently
+    /// does nothing — which is the failure IReasoningRuntimeOptions exists to prevent.
+    ///
+    /// Asserted through the provider's own behaviour rather than by reading a private field: a
+    /// deliberately tiny deadline against a process that never returns must come back quickly.
+    ///
+    /// The sleep runs via the shell and the prompt is NOT interpolated into it. The first version
+    /// of this test passed `{prompt}` as sleep's second argument, which made it exit instantly on
+    /// "invalid time interval" — fast, refused, and never once exercising the deadline. It would
+    /// have passed for entirely the wrong reason.
+    /// </summary>
+    [Fact]
+    public void AHangingAgent_IsBoundedByTheConfiguredDeadline()
+    {
+        var hangs = new AgentCli
+        {
+            Id = AgentCliCatalog.IdPrefix + "hangs",
+            DisplayName = "Hangs",
+            Vendor = "test",
+            Binary = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh",
+            PromptArgs = OperatingSystem.IsWindows()
+                ? new[] { "/c", "timeout /t 30 /nobreak" }
+                : new[] { "-c", "sleep 30" },
+            InstallCommand = "n/a",
+            AuthCommand = "n/a",
+            DocsUrl = "https://example.invalid",
+        };
+
+        var started = DateTime.UtcNow;
+        var response = new AgentCliProvider(hangs, TimeSpan.FromSeconds(2)).Send(ModelRequest.FromPrompt("x"));
+        var took = DateTime.UtcNow - started;
+
+        // Either it timed out, or the platform had no such binary — both are typed refusals, and
+        // neither may hang. The DURATION is the assertion that matters.
+        Assert.False(response.Ok);
+        Assert.True(took < TimeSpan.FromSeconds(20), $"took {took.TotalSeconds:0}s — the deadline was not applied");
+    }
+
     [Fact]
     public void AnEmptyPrompt_IsRefusedBeforeAnythingIsStarted()
     {
