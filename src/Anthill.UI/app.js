@@ -6352,7 +6352,7 @@ async function loadReadiness(){
       if(stmt) stmt.textContent=(d.ready?'READY — ':'NOT READY — ')+(d.statement||'')+` (${d.satisfied}/${d.total})`;
       const attestable=new Set(d.attestable_ids||[]);
       const rows=[...(d.checks||[])].sort((a,b)=>(a.satisfied?1:0)-(b.satisfied?1:0));
-      checks.innerHTML=rows.map(c=>`<div class="rd-check${c.satisfied?'':' fail'}" data-id="${escapeHtml(c.id)}">`
+      checks.innerHTML=rows.map(c=>`<div class="rd-check${c.satisfied?'':' fail'}" data-check="${escapeHtml(c.id)}">`
         + `<span class="rd-flag">${c.satisfied?'PASS':'FAIL'}</span> <b>${escapeHtml(c.title)}</b>`
         + ` <span class="rd-kind">${escapeHtml(c.kind||'')}</span>`
         + `<div class="rd-detail">${escapeHtml(c.detail||'')}</div>`
@@ -6364,7 +6364,7 @@ async function loadReadiness(){
       checks.querySelectorAll('.rd-check').forEach(card=>{
         const send=async satisfied=>{
           const note=card.querySelector('.rd-note')?.value.trim()||'';
-          const r2=await api('/readiness/attest','POST',{threshold_id:card.dataset.id, satisfied, note});
+          const r2=await api('/readiness/attest','POST',{threshold_id:card.dataset.check, satisfied, note});
           setEl('rd-msg', r2&&r2.success?'Attestation recorded.':(r2&&r2.message)||'Attestation failed.');
           if(r2&&r2.success) loadReadiness();
         };
