@@ -4064,6 +4064,17 @@ function chatRenderContent(text){
   return html;
 }
 
+/* v0.3.8.46: a turn's recorded time, briefly. Today shows the clock; older shows the date too.
+ * Returns '' for anything unparseable — a wrong time is worse than no time. */
+function chatTurnTime(iso){
+  if(!iso) return '';
+  const d=new Date(iso); if(isNaN(d.getTime())) return '';
+  const now=new Date();
+  const sameDay=d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate();
+  const hm=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return sameDay?hm:d.toLocaleDateString([],{month:'short',day:'numeric'})+' '+hm;
+}
+
 let chatFingerprint='';        // what is currently on screen, so a poll that changes nothing costs nothing
 let chatTurnContents=[];       // per-turn raw text for the copy action (kept out of the DOM)
 async function chatOpen(id){
@@ -4094,8 +4105,12 @@ async function chatOpen(id){
       thread.innerHTML = turns.length
         ? turns.map((t,i)=>{
             const mine=String(t.role||'').toLowerCase()==='user';
+            // v0.3.8.46: each turn carries its recorded time — the stored created_at, rendered
+            // local. Shown inline, small; the full ISO instant is in the title for auditing.
+            const when=chatTurnTime(t.created_at);
             return `<div class="chat-turn ${mine?'user':'colony'}">
               <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
+                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}
                 <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
             </div>`;
           }).join('')
