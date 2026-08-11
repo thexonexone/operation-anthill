@@ -1024,6 +1024,12 @@ public class UiShellTests
 
         // The jobs list keeps the durable per-run Cancel.
         Assert.Contains("cancelJob", BodyOf(js, "function renderJobList(jobs, listId, badgeId, limit)"));
+
+        // And the MISSION request itself lives in chat — mode:'mission' through the same
+        // escalation-gated turn endpoint, so "chat is the one mission entry" is literally true.
+        Assert.Contains("id=\"chat-work\"", html);
+        Assert.Contains("chatSend('mission')", js);
+        Assert.Contains("mode:mode", BodyOf(js, "async function chatSend(mode)"));
     }
 
     /// <summary>

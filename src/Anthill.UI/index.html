@@ -1166,6 +1166,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-state{font-size:10px;color:var(--muted);}
 .chat-stop{color:var(--status-danger,#e5484d);border-color:rgba(229,72,77,.45);}
 .chat-stop:hover{background:rgba(229,72,77,.12);}
+/* The mission request is visually its own act — amber like every "this asks for authority" cue. */
+.chat-work{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.45);color:var(--amber,#f59e0b);}
+.chat-work:hover{background:rgba(245,158,11,.2);}
 /* v0.3.8.42 (§9/§14): the topology legend's registry-problem notice — amber for stale, and the
    retry sits beside the failure it retries. */
 .chud-problem{color:var(--amber,#f59e0b);font-size:10px;line-height:1.5;margin-bottom:6px;
@@ -3092,9 +3095,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <label class="sr-only" for="chat-input">Message the colony</label>
               <textarea id="chat-input" class="chat-input" rows="1"
                         placeholder="Describe what you want done…"></textarea>
+              <!-- v0.3.8.42 (§3): chat is the one mission entry, so the MISSION request lives here
+                   too — the same escalation-gated path the retired widget carried. Send asks;
+                   Do the work asks for real multi-task execution, and under the Ask policy the
+                   gate appears in the thread before anything runs. -->
+              <button class="mn-send chat-work" id="chat-work"
+                      title="Do the work — asks for real, multi-task execution, gated by your approval policy">⚒</button>
               <button class="mn-send" id="chat-send" title="Send (Enter)">▶</button>
             </div>
-            <div class="chat-hint">Press Enter to send · Shift+Enter for a new line</div>
+            <div class="chat-hint">Enter sends a message · ⚒ asks the colony to do the work (your approval policy applies)</div>
           </main>
 
           <!-- v0.3.8.42: the live colony beside the conversation, at a width where the map is

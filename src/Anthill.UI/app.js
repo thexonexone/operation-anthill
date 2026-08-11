@@ -4126,13 +4126,16 @@ async function chatOpen(id){
 }
 
 let chatLastSent='';   // v0.3.8.42 (§13): Up-arrow in an empty composer recalls this
-async function chatSend(){
+/** @param mode 'chat' (default) or 'mission' — the same two modes the runtime has. A mission
+ *  request goes through the escalation gate; under Ask the approval renders IN the thread. */
+async function chatSend(mode){
+  mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
   const msg=(el&&el.value||'').trim();
   if(!msg) return;
   chatLastSent=msg;
   if(el){ el.value=''; el.style.height=''; }
-  chatSetState('Sending…');
+  chatSetState(mode==='mission'?'Asking to start work…':'Sending…');
   // v0.3.8.42: the refusal summary must OUTLIVE the refresh. chatOpen() recomputes the state line
   // from the conversation detail, so setting the refusal before refreshing meant the one message
   // that explains what happened was overwritten milliseconds later.
@@ -4146,7 +4149,7 @@ async function chatSend(){
       chatActiveId=c.data.id;
       chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
-    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:'chat' });
+    const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
     if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
   }catch(e){ note='Could not send: '+(e.message||''); }
   finally{
@@ -4205,7 +4208,8 @@ async function chatColonyMissionNote(){
   }catch{ el.textContent=''; }
 }
 
-document.getElementById('chat-send')?.addEventListener('click', chatSend);
+document.getElementById('chat-send')?.addEventListener('click', ()=>chatSend());
+document.getElementById('chat-work')?.addEventListener('click', ()=>chatSend('mission'));
 let chatStopInFlight=false;
 document.getElementById('chat-stop')?.addEventListener('click', async ()=>{
   if(chatStopInFlight||!chatActiveId) return;
