@@ -8,7 +8,9 @@ The forward program lives in [`AUTONOMY-10.md`](AUTONOMY-10.md).
 > log included — the chat items from the maturation directive, each backed by the store. The
 > UI gap ledger emptied too: plan preview in chat's gate, the shadow judgment queue with its
 > form, the Readiness page (snapshot, attestation, certification, report, introspection), and
-> source quality on Memory & Signals.
+> source quality on Memory & Signals. Plus turn timestamps and token accounting, home-grown
+> escape-first syntax highlighting, and three escalation bugs found by driving the full
+> chat→gate→preview→approve→mission→patch loop live, each fixed with a regression test.
 
 > v0.3.8.45: Chat + Colony became a SPLIT page on the field's verdict — the desktop tester could
 > not see the colony (it drew, centred, under the opaque floating conversation panel) and the

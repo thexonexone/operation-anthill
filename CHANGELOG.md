@@ -37,6 +37,31 @@ finally show on Memory & Signals. The gaps-stay-visible guard retired exactly as
 message instructed, replaced by its inverse: the surfaces must stay reachable, or the ledger
 reopens loudly.
 
+**Turns carry their time and their cost.** Each turn shows when it happened (stored `created_at`,
+rendered local, full ISO in the hover) and what it cost, when the provider says: the conversation
+path now calls `Send(ModelRequest)` instead of the string-shaped `Generate`, so token usage
+survives into nullable `prompt_tokens`/`completion_tokens` columns — unreported is null, never
+zero, because absence and zero are different facts. Ollama's blocking path reports; streams and
+agent CLIs honestly do not yet.
+
+**Code blocks get colors.** A home-grown single-pass tokenizer — comments, strings, numbers,
+per-language keywords for the js/py/c-family/shell/sql families, generic fallback — with the
+safety property built into its structure: every character is escaped before any span wraps it, so
+highlighting can change how code looks and never what is allowed to render. No third-party
+highlighter; tokenizer failure falls back to the plain escaped text it always was.
+
+**Three escalation bugs, found by driving the pipeline live, fixed with regression tests.** One:
+the waiting list excluded any refusal whose action had EVER been approved, so a conversation's
+first approved mission made every later mission request invisible — "later approved" now compares
+timestamps. Two: approving a mid-mission tool gate re-sent the message into the start_mission
+gate, which ate the answer; the re-send now restates the mission approval already on record. And
+three: an answer the operator gives is recorded the moment it is given, not only if the re-run
+mission happens to consult that tool — the old shape let approvals evaporate unrecorded and kept
+"waiting on you" lit forever. The full loop was then driven end to end on the live colony: chat →
+gate → plan preview (which got a 120s budget — 10s guaranteed a timeout for any real planner) →
+approve → mission with tool gates, tester and soldier review, evidence-bound verification → a
+proposed patch waiting in Changes & Approvals.
+
 ## v0.3.8.45 - chat and colony split the page, because the field said so twice
 
 **The layered Chat + Colony view is retired by its own users.** The desktop tester's report —
