@@ -428,6 +428,13 @@ public sealed class AttachmentBody
     public string? Content { get; set; }
 }
 
+/// <summary>v0.3.8.48: one role's route. Both halves required; nothing else is touched.</summary>
+public sealed class RouteBody
+{
+    public string? Provider { get; set; }
+    public string? Model { get; set; }
+}
+
 /// <summary>v0.3.8.48: create or update a project schedule. Null on PATCH = leave unchanged.</summary>
 public sealed class ScheduleRequest
 {

@@ -1299,6 +1299,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .pv-tab:focus-visible{outline:1px solid rgba(34,211,238,.5);}
 .sch-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .sch-badge{font-size:9px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--dim);}
+/* v0.3.8.48: the Roles page's model assignment rows. */
+.route-assign{display:flex;align-items:center;gap:10px;padding:4px 0;}
+.route-assign label{min-width:130px;font-size:11px;color:var(--muted);}
+.route-assign select{flex:0 1 340px;font-size:11px;}
 /* v0.3.8.48: the approval selector and the inline change cards. */
 .chat-policy{font-size:10px;padding:4px 7px;width:auto;background:var(--bg);}
 .patch-card{align-self:stretch;max-width:min(760px,92%);border:1px solid var(--border);
@@ -2855,6 +2859,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            PAGE: ANT CONFIG
       --------------------------------------------------------------------- -->
       <div class="page page-scroll" id="page-antconfig">
+        <!-- v0.3.8.48: model assignment lives with the roles (defect 18: one surface, not two).
+             One selector per role, available models only, merge-safe saves. -->
+        <div class="card" style="margin-bottom:12px;"><div style="padding:12px;">
+          <h2 style="font-size:12px;margin:0 0 4px;">Model routing</h2>
+          <div class="sub" style="margin-bottom:8px;">Which model serves each role. Only models that can actually run are offered; an unavailable current selection is flagged, not hidden.</div>
+          <div id="role-routing"><div class="hud-state">Loading…</div></div>
+        </div></div>
         <div class="page-hdr">
           <div><h1>Agent Configuration</h1><div class="sub">Customize names, colours, and model routes per caste</div></div>
           <div style="display:flex;gap:8px;align-items:center;">

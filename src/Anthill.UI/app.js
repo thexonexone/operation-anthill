@@ -5874,29 +5874,19 @@ async function loadModelsTab(){
 }
 
 async function loadRoutes(){
+  // v0.3.8.48 (defect 16): structured data. The old parser looked for '?' or '->' in prose the
+  // endpoint stopped emitting, fell back to raw text, and left activeRouteModels empty.
   const grid=document.getElementById('route-grid');
   try{
-    const text=await apiText('/routes');
-    const lines=text.split('\n').filter(l=>l.includes('?')||l.includes('->'));
-    activeRouteModels=new Set();
-    if(!lines.length){
-      const mtext=await apiText('/models');
-      grid.innerHTML=`<div style="font-size:10px;color:var(--muted);white-space:pre-wrap;font-family:var(--mono)">${mtext.substring(0,800)}</div>`;
-      return;
-    }
-    grid.innerHTML=lines.map(l=>{
-      const parts=l.split(/\?|->/).map(s=>s.trim());
-      const role=parts[0]||'';
-      const rest=parts[1]||'';
-      const modelMatch=rest.match(/^([^\s(]+)/);
-      const model=modelMatch?modelMatch[1]:'';
-      if(model) activeRouteModels.add(model);
-      const providerMatch=rest.match(/\(([^)]+)\)/);
-      const provider=providerMatch?providerMatch[1]:'ollama';
-      return `<div class="route-row"><span class="route-role">${role}</span><span class="route-model">${model}</span><span class="route-provider">${provider}</span></div>`;
-    }).join('');
+    const r=await api('/routes/json');
+    if(!(r&&r.success&&r.data)) throw new Error((r&&r.message)||'no data');
+    activeRouteModels=new Set((r.data.roles||[]).map(x=>x.model).filter(Boolean));
+    grid.innerHTML=(r.data.roles||[]).map(x=>
+      `<div class="route-row"><span class="route-role">${escapeHtml(x.role)}</span>`
+      +`<span class="route-model">${escapeHtml(x.model||'')}</span>`
+      +`<span class="route-provider">${escapeHtml(x.provider||'')}${x.available?'':' ⚠ unavailable'}</span></div>`).join('');
   }catch(e){
-    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${e.message}</div>`;
+    grid.innerHTML=`<div style="font-size:10px;color:var(--red)">Could not load routes: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -6574,7 +6564,39 @@ async function openAntConfig(){
   });
 }
 
-PAGE_ENTER['antconfig']=()=>openAntConfig();
+/* v0.3.8.48 — the Roles page's model assignment (defects 16–18). ONE selector per role, listing
+ * only models that can actually run: installed local models, configured providers' catalogs,
+ * installed agents. The stored selection keeps provider and model separate underneath; a current
+ * route pointing at something unavailable is shown as a warning, never offered to others. Each
+ * change saves through the merge-safe single-role endpoint — nothing else in model_routes moves. */
+async function loadRoleRouting(){
+  const host=document.getElementById('role-routing'); if(!host) return;
+  const r=await api('/routes/json');
+  if(!(r&&r.success&&r.data)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Routes unavailable.')}</div>`; return; }
+  const models=r.data.available_models||[];
+  host.innerHTML=(r.data.roles||[]).map(x=>{
+    const cur=`${x.provider}|${x.model}`;
+    const opts=models.map(m=>{
+      const v=`${m.provider}|${m.model}`;
+      return `<option value="${escapeHtml(v)}"${v===cur?' selected':''}>${escapeHtml(m.label)}</option>`;
+    }).join('');
+    const warn=x.available?'':`<option value="${escapeHtml(cur)}" selected>⚠ ${escapeHtml(x.model)} · ${escapeHtml(x.provider)} (unavailable)</option>`;
+    return `<div class="route-assign"><label for="rr-${escapeHtml(x.role)}">${escapeHtml(x.role)}</label>
+      <select class="provider-input" id="rr-${escapeHtml(x.role)}" data-role="${escapeHtml(x.role)}">${warn}${opts}</select>
+      <span class="save-msg" data-rr-msg="${escapeHtml(x.role)}"></span></div>`;
+  }).join('');
+  host.querySelectorAll('select[data-role]').forEach(sel=>sel.addEventListener('change', async ()=>{
+    const [provider,model]=sel.value.split('|');
+    sel.disabled=true;
+    const res=await api('/routes/'+encodeURIComponent(sel.dataset.role),'POST',{provider,model});
+    sel.disabled=false;
+    const msg=host.querySelector(`[data-rr-msg="${sel.dataset.role}"]`);
+    if(msg){ msg.textContent=(res&&res.message)||'Save failed.';
+             msg.className='save-msg '+(res&&res.success?'text-green':'text-red'); }
+  }));
+}
+
+PAGE_ENTER['antconfig']=()=>{ openAntConfig(); loadRoleRouting(); };
 
 document.getElementById('antcfg-save').addEventListener('click',async()=>{
   const msg=document.getElementById('antcfg-msg'); msg.textContent='';
