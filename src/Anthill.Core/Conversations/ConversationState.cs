@@ -86,7 +86,15 @@ public static class ConversationStateReader
             return $"waiting for an operator decision on: {string.Join(", ", waiting)}";
         if (conversation.MissionIds.Count > 0)
             return $"running mission {conversation.MissionIds[^1]}";
-        return turns.Count == 0 ? "no turns yet" : "conversational work";
+        if (turns.Count == 0) return "no turns yet";
+        // v0.3.8.42: "conversational work" used to be returned here FOREVER — replies are produced
+        // synchronously inside the turn, so a persistent working state was a claim about work this
+        // reader could never see, and the console faithfully rendered it as an eternal spinner. An
+        // operator turn with no reply after it is the one persistent state worth naming: it means
+        // the answer failed or was interrupted. Everything else is idle, and idle is spelled "".
+        return string.Equals(turns[^1].Role, "user", StringComparison.OrdinalIgnoreCase)
+            ? "unanswered — no reply was recorded for the last message"
+            : "";
     }
 
     private static string Describe(ConversationTurn turn)

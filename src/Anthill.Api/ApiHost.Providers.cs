@@ -480,6 +480,11 @@ public static partial class ApiHost
                 ["did"] = state.Did,
                 ["waiting_on"] = state.WaitingOn,
                 ["needs_operator"] = state.NeedsOperator,
+                // v0.3.8.42: the LIST projected this and the DETAIL did not, so the chat page had
+                // to guess from the prose — and Doing() answers "cancelled" as a STRING, which a
+                // truthiness check renders as "Working…", keeps a live Stop over a stopped
+                // conversation, and overwrites refusal summaries. State travels as state.
+                ["cancelled"] = state.Cancelled,
                 ["policy"] = state.Policy.ToString().ToLowerInvariant(),
                 ["mission_ids"] = conversation.MissionIds,
                 ["turns"] = Queen.Memory.LoadConversationTurns(id).Select(t => new Dictionary<string, object?>

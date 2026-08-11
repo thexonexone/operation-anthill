@@ -182,8 +182,23 @@ public sealed partial class Queen : IMissionCoordinator, IDisposable
         // v3.7.0: the conversation runtime gets its production call site here. Without this the
         // escalation gate is unreachable — ConversationScope.Evaluate returns null when nothing has
         // entered a scope, so every gate check would silently pass.
+        // v0.3.8.42: chat turns are ANSWERED, through the same router the roles use. The
+        // `conversation` route key resolves like any role's — configured route, then the
+        // configured fallback, then the default provider — so Ollama, a keyed API or an installed
+        // agent CLI are equally valid and the operator chooses in Providers & Model Routing.
+        // A runtime composed without routing says so instead of spinning.
         Conversations = new Anthill.Core.Conversations.ConversationRunner(
-            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token));
+            Memory, (goal, onCreated, token) => RunMission(goal, onMissionCreated: onCreated, cancel: token),
+            ask: Router is null ? null : prompt =>
+            {
+                var (provider, model) = Router.GetRoute("conversation");
+                var result = Router.GetClientForProvider(provider, model).Generate(prompt);
+                return new Anthill.Core.Conversations.ConversationReply(
+                    result.Ok && !string.IsNullOrWhiteSpace(result.Content),
+                    result.Content, provider, model,
+                    result.Ok ? (string.IsNullOrWhiteSpace(result.Content) ? "the provider answered with empty content" : null)
+                              : $"{result.Status}: {TextUtil.Truncate(result.Content, 300, "…")}");
+            });
 
         Workspaces = new Anthill.Core.Workspaces.MissionWorkspaceManager(Memory, options.AllowedWorkspaceRoot);
         foreach (var note in Workspaces.Recover())
