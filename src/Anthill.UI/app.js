@@ -91,7 +91,10 @@ async function startEventStream(){
 
 function stopEventStream(){ if(_evtCtl){ const c=_evtCtl; _evtCtl=null; c.abort(); } }
 
-async function api(path, method='GET', body=null) {
+// v0.3.8.46: timeoutMs is a parameter because one number cannot serve every endpoint — the plan
+// preview runs a real planner through a routed model and 10s guaranteed a timeout for any agent
+// CLI provider. Callers that expect slow, honest work say so; everyone else keeps the default.
+async function api(path, method='GET', body=null, timeoutMs=10000) {
   const isGet=method==='GET'&&!body;
   // Auth gate: while logged out, only auth endpoints may touch the network.
   if(typeof authLost!=='undefined'&&authLost&&!path.startsWith('/auth'))
@@ -105,7 +108,7 @@ async function api(path, method='GET', body=null) {
     if(now<_api429Until) return { success:false, message:'Rate limited — backing off.', status:429 };
   }
   const run=(async()=>{
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),10000);
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),timeoutMs);
     try{
       const opts = { method, headers: { 'Authorization': 'Bearer '+TOKEN, 'Content-Type': 'application/json' }, signal:ctl.signal };
       if (body) opts.body = JSON.stringify(body);
@@ -125,15 +128,15 @@ async function api(path, method='GET', body=null) {
       if(e&&e.message==='unauthorized') throw e;
       const stale=isGet?_apiCache.get(path):null;
       if(stale) return stale.data; // stale-while-error: keep the UI alive, refresh next poll
-      return { success:false, message:(e&&e.name==='AbortError')?'Request timed out (10s).':('Request failed: '+((e&&e.message)||'network error')), status:0 };
+      return { success:false, message:(e&&e.name==='AbortError')?('Request timed out ('+Math.round(timeoutMs/1000)+'s).'):('Request failed: '+((e&&e.message)||'network error')), status:0 };
     }finally{ clearTimeout(timer); if(isGet)_apiInflight.delete(path); }
   })();
   if(isGet)_apiInflight.set(path,run);
   return run;
 }
 // Mutations must show fresh data next read: bust the GET cache after any successful POST/PUT/DELETE.
-(function(){ const _m=api; window.api=async function(p,method='GET',body=null){
-  const out=await _m(p,method,body);
+(function(){ const _m=api; window.api=async function(p,method='GET',body=null,timeoutMs=10000){
+  const out=await _m(p,method,body,timeoutMs);
   if(method!=='GET'&&out&&out.success!==false) apiCacheBust('');
   return out; };})();
 // Same auth gate for text endpoints (approvals/events text views) — no network while logged out.
@@ -4182,8 +4185,8 @@ async function chatPlanPreview(box, turns){
   const lastUser=[...(turns||[])].reverse().find(t=>t.role==='user');
   if(!lastUser){ host.hidden=false; host.innerHTML='<div class="hud-state">Nothing to plan — no operator message found.</div>'; return; }
   host.hidden=false;
-  host.innerHTML='<div class="hud-state">Asking the planner…</div>';
-  const r=await api('/missions/plan','POST',{goal:lastUser.content});
+  host.innerHTML='<div class="hud-state">Asking the planner… (a routed model does real planning here; this can take a minute)</div>';
+  const r=await api('/missions/plan','POST',{goal:lastUser.content},120000);
   if(!r||!r.success){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'The planner did not answer.')}</div>`; return; }
   const p=r.data||{}, tasks=p.tasks||[];
   const warns=(p.constraint_warnings||[]).map(w=>`<div class="chat-plan-warn">⚠ ${escapeHtml(w)}</div>`).join('');
