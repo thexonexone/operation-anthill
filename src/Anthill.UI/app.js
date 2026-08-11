@@ -4179,6 +4179,7 @@ async function chatOpen(id){
               + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
               + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
               + chatRenderContent(t.content)
+              + ((t.attachments&&t.attachments.length)?`<div class="turn-attach">${t.attachments.map(a=>`📄 ${escapeHtml(a.filename)}`).join(' · ')}</div>`:'')
               + `</div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
@@ -4337,6 +4338,39 @@ async function chatConsumeStream(response){
 
 /** @param mode 'chat' (default) or 'mission' — the same two modes the runtime has. A mission
  *  request goes through the escalation gate; under Ask the approval renders IN the thread. */
+/* v0.3.8.47 — attachments. Files staged on the composer (📎 or drag-and-drop), sent WITH the
+ * message, recorded against that turn. Text only and capped, mirroring the server's own rule —
+ * refusing here just says it sooner and kinder. */
+let chatStagedFiles=[];
+function chatRenderStaged(){
+  const host=document.getElementById('chat-attach-chips'); if(!host) return;
+  host.innerHTML=chatStagedFiles.map((f,i)=>`<span class="attach-chip">📄 ${escapeHtml(f.filename)}`
+    +` <span class="attach-size">${f.content.length>1024?Math.round(f.content.length/1024)+' KB':f.content.length+' B'}</span>`
+    +`<button class="attach-x" data-x="${i}" title="Remove" aria-label="Remove attachment">✕</button></span>`).join('');
+  host.querySelectorAll('.attach-x').forEach(b=>b.addEventListener('click',()=>{
+    chatStagedFiles.splice(+b.dataset.x,1); chatRenderStaged();
+  }));
+}
+async function chatStageFiles(fileList){
+  for(const file of fileList||[]){
+    if(chatStagedFiles.length>=8){ chatSetState('At most 8 attachments per message.'); break; }
+    if(file.size>262144){ chatSetState(`"${file.name}" is too large — 256 KB of text max.`); continue; }
+    const content=await file.text();
+    if(content.includes('\0')){ chatSetState(`"${file.name}" looks binary — attach text files.`); continue; }
+    chatStagedFiles.push({filename:file.name, content});
+  }
+  chatRenderStaged();
+}
+document.getElementById('chat-attach')?.addEventListener('click', ()=>document.getElementById('chat-attach-file')?.click());
+document.getElementById('chat-attach-file')?.addEventListener('change', e=>{ chatStageFiles(e.target.files); e.target.value=''; });
+// Drag-and-drop onto the composer area.
+const _composer=document.querySelector('.chat-composer');
+if(_composer){
+  ['dragover','dragenter'].forEach(ev=>_composer.addEventListener(ev, e=>{ e.preventDefault(); _composer.classList.add('dragging'); }));
+  ['dragleave','drop'].forEach(ev=>_composer.addEventListener(ev, e=>{ e.preventDefault(); _composer.classList.remove('dragging'); }));
+  _composer.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) chatStageFiles(e.dataTransfer.files); });
+}
+
 async function chatSend(mode){
   mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
@@ -4368,7 +4402,7 @@ async function chatSend(mode){
       const response=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/turns'),{
         method:'POST',
         headers:{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},
-        body:JSON.stringify({message:msg, mode:mode, stream:true}),
+        body:JSON.stringify({message:msg, mode:mode, stream:true, attachments:chatStagedFiles}),
         signal:chatStreamAbort.signal,
       });
       if((response.headers.get('content-type')||'').includes('text/event-stream')){
@@ -4379,7 +4413,7 @@ async function chatSend(mode){
         if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
       }
     }else{
-      const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode });
+      const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/turns','POST',{ message:msg, mode:mode, attachments:chatStagedFiles });
       if(r&&r.data&&r.data.started===false) note=r.data.summary||'Refused';
     }
   }catch(e){
@@ -4387,6 +4421,7 @@ async function chatSend(mode){
   }
   finally{
     chatStreamAbort=null; chatSetComposerStreaming(false);
+    chatStagedFiles=[]; chatRenderStaged();
     chatStreamLiveEl?.remove(); chatStreamLiveEl=null;
     chatFingerprint='';   // the provisional bubble yields to the recorded turn
     apiCacheBust('/conversations'); loadChat();

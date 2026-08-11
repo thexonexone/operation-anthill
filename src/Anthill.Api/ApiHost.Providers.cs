@@ -418,6 +418,22 @@ public static partial class ApiHost
                 },
             };
 
+            // v0.3.8.47: attachments — text only, capped, and the caps are SPOKEN. A file the
+            // prompt transport could never carry is refused here, not stored as a lie.
+            var files = new List<(string Filename, string Content)>();
+            foreach (var a in body?.Attachments ?? new List<AttachmentBody>())
+            {
+                var name = (a.Filename ?? "file.txt").Trim();
+                var content = a.Content ?? "";
+                if (files.Count >= 8) return ApiJson.Error("At most 8 attachments per message.", "bad_request");
+                if (content.Length > 262_144)
+                    return ApiJson.Error($"\"{name}\" is too large — attachments are capped at 256 KB of text.", "bad_request");
+                if (content.Contains('\0'))
+                    return ApiJson.Error($"\"{name}\" looks binary. The conversation carries text; attach text files.", "bad_request");
+                files.Add((name, content));
+            }
+            var attachments = files.Count == 0 ? null : files;
+
             /*
              * v0.3.8.44 — the streamed turn. Same runner, same recording, same outcome; the only
              * difference is that content deltas travel to the client AS the provider produces
@@ -442,6 +458,7 @@ public static partial class ApiHost
                 using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
                 {
                     var outcome = Queen.Conversations.Run(conversation, message, mode, answers,
+                        attachments: attachments,
                         onDelta: delta =>
                         {
                             try { Frame("delta", System.Text.Json.JsonSerializer.Serialize(delta)); }
@@ -457,7 +474,7 @@ public static partial class ApiHost
             // decision log the transcript endpoint reads back.
             using (ConversationScope.Enter(conversation, answers, Queen.Memory.SaveEscalationDecision))
             {
-                var outcome = Queen.Conversations.Run(conversation, message, mode, answers);
+                var outcome = Queen.Conversations.Run(conversation, message, mode, answers, attachments: attachments);
                 return ApiJson.Ok(OutcomePayload(outcome), outcome.Summary);
             }
         });
@@ -744,6 +761,11 @@ public static partial class ApiHost
                     // v0.3.8.46: null when the provider did not report — the UI shows nothing
                     // rather than a fabricated zero.
                     ["prompt_tokens"] = t.PromptTokens, ["completion_tokens"] = t.CompletionTokens,
+                    // v0.3.8.47: names and sizes only — the content is in the record for export
+                    // and prompting; the transcript shows what was attached, not a wall of text.
+                    ["attachments"] = Queen.Memory.LoadTurnAttachments(t.Id)
+                        .Select(a => new Dictionary<string, object?> { ["filename"] = a.Filename, ["bytes"] = a.Bytes })
+                        .ToList(),
                 }).ToList(),
                 // Refusals included. An audit asking "did it try to do X" needs those most, because
                 // they are the attempts nobody saw happen.

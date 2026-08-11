@@ -417,6 +417,12 @@ public sealed class ConversationRequest
     public string? ProjectId { get; set; }
 }
 
+public sealed class AttachmentBody
+{
+    public string? Filename { get; set; }
+    public string? Content { get; set; }
+}
+
 /// <summary>v0.3.8.47: import a transcript. Turns become history; nothing is invented for them.</summary>
 public sealed class ImportRequest
 {
@@ -447,6 +453,8 @@ public sealed class TurnRequest
     public string? Mode { get; set; }
     /// <summary>Action name to "approve". Absence is NOT consent.</summary>
     public Dictionary<string, string>? Answers { get; set; }
+    /// <summary>v0.3.8.47: text files handed to this turn. Capped and text-only, enforced loudly.</summary>
+    public List<AttachmentBody>? Attachments { get; set; }
     /// <summary>v0.3.8.44: deliver the reply as SSE deltas while it is produced. The recorded turn
     /// and the final outcome are identical either way — streaming is presentation, not contract.</summary>
     public bool Stream { get; set; }
