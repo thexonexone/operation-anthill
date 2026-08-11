@@ -24,11 +24,16 @@ the header is one quiet flex line (name · time · cost · actions), and bubbles
 
 **Agents stream, the desktop grows up.** CLI agents deliver stdout line by line through the same
 delta path Ollama uses — lines because that is what a pipe really delivers — and ■ kills the
-process tree. (Field note: Claude Code buffers when piped, so its answer still lands whole; the
-plumbing is ready for agents that flush.) The Windows shell gains a polite tray — minimize goes
+process tree. Claude Code goes further: stream-json with
+--include-partial-messages delivers real token deltas — the parser reads the wrapped
+content_block_delta events and skips the whole-message repeat so the answer never doubles. The Windows shell gains a polite tray — minimize goes
 there with a first-time balloon, the X still quits — and a startup update check that ASKS GitHub
 once, points at the release page when something newer exists, and never downloads or installs
-anything. Offline is silence, not errors.
+anything. Offline is silence, not errors. And the Objectives board gains the self-improvement seed: one
+click fills the form with a standing objective aimed at ANTHILL's own codebase — one small
+verifiable improvement per run, patch plus tests, the normal review pipeline — and the operator
+reads it before pressing Add, because a colony pointed at its own repo is exactly the kind of
+thing that should be read before it exists.
 
 ## v0.3.8.46 - find it, keep it, take it with you
 
