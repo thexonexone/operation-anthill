@@ -403,7 +403,7 @@ const PAGE_TITLES = {
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
-  readiness:'Readiness', projectview:'Project'
+  readiness:'Readiness', projectview:'Project', integrations:'Integrations'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -448,99 +448,31 @@ const IAICON = {
 
 // The information architecture. vis: 'all' | 'admin' | 'hl' (admin OR homelab_operator).
 const IA = [
-  // v3.8.39: the conversation is the product's primary act, so it leads the navigation.
+  // v0.3.8.48 — the project-centered navigation. Seven destinations, named for what an operator
+  // wants, not for runtime internals. Operations, Infrastructure, Colony, Security and
+  // Administration are gone as domains; every old route resolves through ROUTE_ALIAS below.
   { type:'item', id:'chat', label:'Chat', route:'/chat', page:'chat', vis:'all' },
-  // v0.3.8.40: the top row. Each promotes an existing surface that was only reachable as a
-  // dashboard widget an operator had to know to enable — Projects are mission workspaces, Tools is
-  // the capability report, Scheduled is the Director's standing objectives. No new backend.
-  // v0.3.8.42 (§5 of the truthfulness audit): "Projects" implied project management the backend
-  // does not have. The backend concept is a mission workspace — the isolated checkout a mission
-  // works in — so the surface now says that. Route unchanged; bookmarks keep working.
-  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },   // v0.3.8.47: truthful again — the backend now HAS projects
-  { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
-  // v0.3.8.41/42 — was `Scheduled` at `/scheduled`, and neither word was true.
-  //
-  // ANTHILL HAS NO SCHEDULING SUBSYSTEM. There is no cron, no interval, no next-run and no cadence
-  // anywhere in the objective model, the Director, or the API. An operator clicking "Scheduled"
-  // was promised a feature that does not exist, and the console said so itself one click later —
-  // PAGE_TITLES already names this page `Objectives`, and the icon was a clock.
-  //
-  // Both branches of this release fixed it independently; this is the union. The top-row
-  // promotion stays with the truthful label on the CANONICAL route (v0.3.8.40 promoted it because
-  // standing objectives were reachable only as a hidden dashboard widget — that was right, the
-  // label was not), and old `/scheduled` bookmarks resolve through ROUTE_ALIAS.
-  { type:'item', id:'objectives', label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'objectives', label:'Objectives', route:'/objectives', page:'objboard', vis:'admin' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
-  // v0.3.8.42 (§7): the Monitoring domain dissolved — every section in it was a second door to a
-  // concept that already had a home. Activity/Events/Results live with Missions, whose activity
-  // they are; the Changes tab duplicated Operations → Changes & Approvals; "Autonomous Runs"
-  // opened the Director page under a second name; the two homelab views moved home to
-  // Infrastructure. Old /monitoring/* bookmarks resolve through ROUTE_ALIAS below.
-  { type:'domain', id:'operations', label:'Operations', vis:'all', sections:[
-    { label:'Missions', route:'/operations/missions', page:'missions', vis:'all', badge:'nav-jobs-badge', tabs:[
-      { label:'Console', route:'/operations/missions/console', page:'missions', vis:'all' },
-      { label:'History', route:'/operations/missions/history', page:'results', vis:'all' },
-      { label:'Activity', route:'/operations/missions/activity', page:'activity', vis:'all' },
-      { label:'Events', route:'/operations/missions/events', page:'events', vis:'all' },
-    ]},
-    { label:'Automation', route:'/operations/automation', page:'autonomy', vis:'admin', badge:'nav-autonomy-badge', tabs:[
-      { label:'Director', route:'/operations/automation/director', page:'autonomy', vis:'admin' },
-      { label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
-      { label:'Rules', route:'/operations/automation/rules', page:'homelab', hlsub:'automation', vis:'hl' },
-    ]},
-    // v0.3.8.42 (§2): ONE entry for one backend store. Approvals and Changes were two sidebar
-    // entries opening the same page in different views — the approval is a state of the change,
-    // not a separate product area. Both routes survive as tabs; bookmarks keep working.
-    { label:'Changes & Approvals', route:'/operations/changes', page:'patches', vis:'admin', view:'changes', badge:'nav-patches-badge', tabs:[
-      { label:'Changes', route:'/operations/changes', page:'patches', vis:'admin', view:'changes' },
-      { label:'Approvals', route:'/operations/approvals', page:'patches', vis:'admin', view:'approvals' },
-    ]},
+  { type:'domain', id:'tools', label:'Tools', vis:'all', sections:[
+    { label:'Capabilities', route:'/tools-view', page:'toolsview', vis:'all' },
+    // The colony's memory and learning signals belong beside the capabilities that use them.
+    { label:'Memory & Signals', route:'/tools/memory', page:'pheromones', vis:'admin' },
   ]},
-  { type:'domain', id:'infrastructure', label:'Infrastructure', vis:'hl', sections:[
-    { label:'Overview', route:'/infrastructure/overview', page:'homelab', hlsub:'overview', vis:'hl' },
-    { label:'Compute', route:'/infrastructure/compute', page:'homelab', hlsub:'virtualization', vis:'hl' },
-    { label:'Containers', route:'/infrastructure/containers', page:'homelab', hlsub:'containers', vis:'hl' },
-    { label:'Storage', route:'/infrastructure/storage', page:'homelab', hlsub:'storage', vis:'hl' },
-    { label:'Network', route:'/infrastructure/network', page:'homelab', hlsub:'networking', vis:'hl' },
-    { label:'Services', route:'/infrastructure/services', page:'homelab', hlsub:'services', vis:'hl' },
-    { label:'Health', route:'/infrastructure/health', page:'homelab', hlsub:'monitoring', vis:'hl' },
-    // v0.3.8.42 (§7): moved home from the dissolved Monitoring domain — both are homelab views.
-    { label:'Alerts', route:'/infrastructure/alerts', page:'homelab', hlsub:'alerts', vis:'hl' },
-    { label:'Activity', route:'/infrastructure/activity', page:'homelab', hlsub:'activity', vis:'hl' },
-    { label:'Automation Rules', route:'/infrastructure/automation', page:'homelab', hlsub:'automation', vis:'hl' },
-    { label:'Apps', route:'/infrastructure/apps', page:'homelab', hlsub:'apps', vis:'hl' },
-  ]},
-  { type:'domain', id:'colony', label:'Colony', vis:'all', sections:[
-    { label:'Topology', route:'/colony/topology', page:'colony', vis:'all' },
-    // v0.3.8.42 (§2/§9): "Roles", because that is the backend concept — the twelve colony roles
-    // and their workers. "Agents" blurred them with the installable coding agents one tab over
-    // and with provider routing, which are different things with different remedies.
-    { label:'Roles', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
-      { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
-      { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
-      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own roles.
-      { label:'Coding Agents', route:'/colony/agents/coding', page:'agentcli', vis:'admin' },
-    ]},
-    { label:'Memory & Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
-  ]},
-  { type:'domain', id:'security', label:'Security', vis:'admin', sections:[
-    { label:'Security Center', route:'/security/posture', page:'security', vis:'admin' },
-    { label:'Access & Targets', route:'/security/access', page:'homelab', hlsub:'networking', vis:'hl' },
-  ]},
-  { type:'domain', id:'administration', label:'Administration', vis:'admin', sections:[
-    // v0.3.8.42 (§2/§11): provider routing is CONFIGURATION, not a property of the colony — a
-    // role routed across providers is settings, not extra colony members. Moved here from the
-    // Colony domain; the /colony/model-routing routes are unchanged so bookmarks keep working.
+  { type:'item', id:'integrations', label:'Integrations', route:'/integrations', page:'integrations', vis:'admin' },
+  { type:'domain', id:'settings', label:'Settings', vis:'admin', sections:[
+    { label:'General', route:'/settings/general', page:'settings', vis:'admin' },
     { label:'Providers & Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
       { label:'Routes & Models', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models' },
       { label:'Providers', route:'/colony/model-routing/providers', page:'settings', vis:'admin', stab:'providers' },
     ]},
-    { label:'Users', route:'/administration/users', page:'users', vis:'admin' },
-    { label:'Settings', route:'/administration/settings', page:'settings', vis:'admin' },
-    // v0.3.8.46: the qualification snapshot and the colony's introspection, surfaced. Both
-    // endpoints spent releases computing results with no reader.
-    { label:'Readiness', route:'/administration/readiness', page:'readiness', vis:'admin' },
-    { label:'Terminal', route:'/administration/terminal', page:'shell', vis:'admin' },
+    { label:'Roles', route:'/settings/roles', page:'antconfig', vis:'admin' },
+    { label:'Security', route:'/settings/security', page:'security', vis:'admin' },
+    { label:'Users', route:'/settings/users', page:'users', vis:'admin' },
+    { label:'System', route:'/settings/system', page:'events', vis:'admin' },
+    { label:'Readiness', route:'/settings/readiness', page:'readiness', vis:'admin' },
+    { label:'Terminal', route:'/settings/terminal', page:'shell', vis:'admin' },
   ]},
 ];
 
@@ -570,14 +502,15 @@ const DOMAIN_HOME = {};
 })();
 // Deterministic canonical home per page (first-occurrence is ambiguous for shared pages like homelab).
 Object.assign(PAGE_HOME,{
-  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  activity:'/operations/missions/activity',
-  results:'/operations/missions/history', events:'/operations/missions/events',
-  patches:'/operations/changes', objboard:'/operations/automation/objectives',
-  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
-  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
-  autonomy:'/operations/automation/director', security:'/security/posture',
-  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  activity:'/settings/system',
+  results:'/projects', events:'/settings/system',
+  patches:'/chat', objboard:'/objectives',
+  pheromones:'/tools/memory', homelab:'/integrations',
+  antconfig:'/settings/roles', antobs:'/settings/roles',
+  autonomy:'/objectives', security:'/settings/security',
+  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users',
+  integrations:'/integrations', projectview:'/projects', readiness:'/settings/readiness'
 });
 // Homelab in-page sub-nav (data-sub) → the canonical route that owns that sub-page, so the
 // existing #hl-subnav buttons drive breadcrumbs / sidebar / URL through the router (v2.6 Phase 2).
@@ -590,25 +523,61 @@ const HLSUB_ROUTE={
 };
 // Legacy hash → new route (URL migration; §9 of the proposal).
 const LEGACY_REDIRECT={
-  overview:'/dashboard', colony:'/colony/topology', missions:'/operations/missions',
-  events:'/operations/missions/events', results:'/operations/missions/history',
-  patches:'/operations/changes', objboard:'/operations/automation/objectives',
-  pheromones:'/colony/signals', homelab:'/infrastructure/overview',
-  antconfig:'/colony/agents/configure', antobs:'/colony/agents/inspect',
-  autonomy:'/operations/automation/director', security:'/security/posture',
-  shell:'/administration/terminal', settings:'/administration/settings', users:'/administration/users'
+  overview:'/dashboard', colony:'/dashboard', missions:'/projects',
+  events:'/settings/system', results:'/projects',
+  patches:'/chat', objboard:'/objectives',
+  pheromones:'/tools/memory', homelab:'/integrations',
+  antconfig:'/settings/roles', antobs:'/settings/roles',
+  autonomy:'/objectives', security:'/settings/security',
+  shell:'/settings/terminal', settings:'/settings/general', users:'/settings/users'
 };
 // v0.3.8.42 (§7): routes that MOVED when the Monitoring domain dissolved. Bookmarks and deep
 // links keep working; the router resolves these before the table lookup.
 const ROUTE_ALIAS={
-  '/monitoring/activity':'/operations/missions/activity',
-  '/monitoring/activity/events':'/operations/missions/events',
-  '/monitoring/activity/results':'/operations/missions/history',
-  '/monitoring/activity/changes':'/operations/changes',
-  '/monitoring/activity/runs':'/operations/automation/director',
-  '/monitoring/activity/infra':'/infrastructure/activity',
-  '/monitoring/alerts':'/infrastructure/alerts',
-  '/scheduled':'/operations/automation/objectives',
+  // v0.3.8.48 — every route the restructure removed, resolved to its new home. Bookmarks are
+  // promises; these keep them.
+  '/colony/topology':'/dashboard',
+  '/colony/agents':'/settings/roles',
+  '/colony/agents/configure':'/settings/roles',
+  '/colony/agents/inspect':'/settings/roles',
+  '/colony/agents/coding':'/integrations',
+  '/colony/signals':'/tools/memory',
+  '/administration/users':'/settings/users',
+  '/administration/settings':'/settings/general',
+  '/administration/terminal':'/settings/terminal',
+  '/administration/readiness':'/settings/readiness',
+  '/security/posture':'/settings/security',
+  '/security/access':'/integrations',
+  '/infrastructure/overview':'/integrations',
+  '/infrastructure/compute':'/integrations',
+  '/infrastructure/containers':'/integrations',
+  '/infrastructure/storage':'/integrations',
+  '/infrastructure/network':'/integrations',
+  '/infrastructure/services':'/integrations',
+  '/infrastructure/health':'/integrations',
+  '/infrastructure/alerts':'/integrations',
+  '/infrastructure/activity':'/integrations',
+  '/infrastructure/automation':'/integrations',
+  '/infrastructure/apps':'/integrations',
+  '/operations/missions':'/projects',
+  '/operations/missions/console':'/projects',
+  '/operations/missions/history':'/projects',
+  '/operations/missions/activity':'/settings/system',
+  '/operations/missions/events':'/settings/system',
+  '/operations/changes':'/chat',
+  '/operations/approvals':'/chat',
+  '/operations/automation':'/objectives',
+  '/operations/automation/director':'/objectives',
+  '/operations/automation/objectives':'/objectives',
+  '/operations/automation/rules':'/integrations',
+  '/monitoring/activity':'/settings/system',
+  '/monitoring/activity/events':'/settings/system',
+  '/monitoring/activity/results':'/projects',
+  '/monitoring/activity/changes':'/chat',
+  '/monitoring/activity/runs':'/objectives',
+  '/monitoring/activity/infra':'/integrations',
+  '/monitoring/alerts':'/integrations',
+  '/scheduled':'/projects',
 };
 
 function canSee(vis){
@@ -4821,6 +4790,60 @@ PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
 var projectViewId=null;
 let pvProject=null;
 PAGE_ENTER['projectview']=()=>{ if(projectViewId) loadProjectView(); };
+
+/* v0.3.8.48 — Integrations: the real catalog, honestly ordered. Configured providers first with
+ * their verify state, unconfigured second as "available", installed agents as integrations (they
+ * are — see the directive), and the homelab as one card into its own deck. Nothing invented. */
+PAGE_ENTER['integrations']=()=>loadIntegrations();
+async function loadIntegrations(){
+  const host=document.getElementById('int-body'); if(!host) return;
+  const [cat,conn]=await Promise.all([api('/providers/catalog'),api('/providers')]);
+  const catalog=(cat&&cat.data)||[];
+  const conns=(conn&&conn.data)||[];
+  const byId=Object.fromEntries(conns.map(c=>[c.provider,c]));
+  const row=(p)=>{
+    const c=byId[p.provider]||{};
+    const configured=!!(c.configured||p.agent&&p.installed);
+    const status=p.agent
+      ? (p.installed?'installed':'not installed')
+      : c.configured
+        ? (c.last_verify_ok===true?'verified':c.last_verify_ok===false?'failing':'configured — not yet tested')
+        : 'not configured';
+    return {p,c,configured,status};
+  };
+  const rows=catalog.map(row).sort((a,b)=>(b.configured?1:0)-(a.configured?1:0));
+  host.innerHTML=rows.map(({p,c,configured,status})=>`<div class="card${configured?'':' int-avail'}" style="margin-bottom:6px;">
+    <div style="padding:11px 13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <b style="color:var(--text);font-size:12px;">${escapeHtml(p.name||p.provider)}</b>
+      <span class="sch-badge">${escapeHtml(p.kind||'provider')}</span>
+      <span class="sch-badge" style="${status==='verified'||status==='installed'?'color:var(--green,#34d399)':status==='failing'?'color:var(--red,#f87171)':''}">${escapeHtml(status)}</span>
+      ${c.last_verified_at?`<span style="font-size:9px;color:var(--dim)">last test ${escapeHtml(chatTurnTime(c.last_verified_at)||'')}</span>`:''}
+      ${c.last_verify_message&&c.last_verify_ok===false?`<span style="font-size:9px;color:var(--red,#f87171)">${escapeHtml(String(c.last_verify_message).slice(0,80))}</span>`:''}
+      <span style="flex:1"></span>
+      ${!p.agent?`<button class="btn btn-ghost" data-int-cfg>Configure</button>`:''}
+      ${!p.agent&&c.configured?`<button class="btn btn-ghost" data-int-test="${escapeHtml(p.provider)}">Test connection</button>`:''}
+      ${p.agent&&!p.installed?`<button class="btn btn-ghost" data-int-agents>Install…</button>`:''}
+    </div></div>`).join('')
+    +`<div class="card" style="margin-top:10px;"><div style="padding:11px 13px;display:flex;align-items:center;gap:10px;">
+       <b style="color:var(--text);font-size:12px;">Homelab</b>
+       <span class="sch-badge">infrastructure</span>
+       <span style="font-size:10px;color:var(--muted);flex:1;">Proxmox, containers, storage, networking and automation — managed in its own deck.</span>
+       <button class="btn btn-ghost" data-int-hl>Open</button></div></div>`;
+  host.querySelectorAll('[data-int-cfg]').forEach(b=>b.addEventListener('click',()=>go('/colony/model-routing/providers')));
+  host.querySelectorAll('[data-int-agents]').forEach(b=>b.addEventListener('click',()=>go('/integrations')||showPage('agentcli',{noHistory:false})));
+  host.querySelector('[data-int-hl]')?.addEventListener('click',()=>showPage('homelab',{noHistory:false}));
+  host.querySelectorAll('[data-int-test]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true; b.textContent='Testing…';
+    const r=await api('/providers/'+encodeURIComponent(b.dataset.intTest)+'/test','POST',{},30000);
+    b.disabled=false; b.textContent='Test connection';
+    chatSetState&&0; loadIntegrations();
+    const note=document.createElement('div'); note.className='hud-state';
+    note.textContent=(r&&r.message)||'Test finished.';
+    host.prepend(note); setTimeout(()=>note.remove(),4000);
+  }));
+}
+if(!window.__intReloadWired){ window.__intReloadWired=true;
+  document.getElementById('int-reload')?.addEventListener('click',()=>loadIntegrations()); }
 
 async function loadProjectView(){
   const r=await api('/projects/'+encodeURIComponent(projectViewId));

@@ -1268,7 +1268,7 @@ public class UiShellTests
 
         // No top-level Scheduled entry; the objectives board stays reachable through Automation.
         Assert.DoesNotContain("label:'Scheduled'", js);
-        Assert.Contains("route:'/operations/automation/objectives'", js);
+        Assert.Contains("route:'/objectives'", js);
 
         // Navigation carries navigational labels.
         Assert.DoesNotContain("Patch Colony", html);
@@ -1299,11 +1299,12 @@ public class UiShellTests
         Assert.Contains("ROUTE_ALIAS[h]", BodyOf(js, "function router()"));
         Assert.Contains("ROUTE_ALIAS[route]", BodyOf(js, "function go(route,push)"));
 
-        // The moved pages appear in exactly one IA route each — a second appearance is how the
-        // duplicate-door pattern starts over.
+        // v0.3.8.48: events lives in exactly one IA route (Settings → System); activity and
+        // results left the navigation entirely — their concerns live in project History and
+        // Settings → System, and a reappearance is the duplicate-door pattern starting over.
         Assert.Single(Regex.Matches(js, "page:'events'"));
-        Assert.Single(Regex.Matches(js, "page:'activity'"));
-        Assert.Single(Regex.Matches(js, "page:'results'"));
+        Assert.Empty(Regex.Matches(js, "page:'activity'"));
+        Assert.Empty(Regex.Matches(js, "page:'results'"));
     }
 
     /// <summary>
