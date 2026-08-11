@@ -3818,6 +3818,10 @@ async function loadAntObsDirectory(grid){
  */
 let chatActiveId = null;
 let chatColonyOpen = false;
+// v0.3.8.40: /conversations/{id} does NOT return a title — only the list does. Without this the
+// header read "Conversation" for every thread, including the one whose title was right there in
+// the rail beside it.
+const chatTitles = {};
 
 function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
 
@@ -3830,6 +3834,7 @@ async function loadChat(){
     if(!convs.length){
       list.innerHTML='<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
+      convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
         ${c.doing?`<span class="attn">Working…</span>`:''}
@@ -3863,7 +3868,7 @@ async function chatOpen(id){
       : '<div class="hud-state">No messages yet.</div>';
     thread.scrollTop = thread.scrollHeight;
 
-    setEl('chat-title', d.title || 'Conversation');
+    setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
     chatSetState(d.needs_operator ? 'Waiting on you' : (d.doing ? 'Working…' : ''));
     document.querySelectorAll('.chat-conv').forEach(el=>
       el.classList.toggle('active', el.dataset.id===id));
