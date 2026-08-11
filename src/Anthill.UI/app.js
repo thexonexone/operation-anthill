@@ -5072,10 +5072,12 @@ async function pvRenderHistory(){
     const box=card.querySelector('.pv-mission-detail');
     if(!box.hidden){ box.hidden=true; return; }
     box.hidden=false; box.textContent='Loading…';
-    const d=await api('/missions/'+encodeURIComponent(card.dataset.mission)).catch(()=>null);
+    // Found live: /missions/{id} is not a JSON surface — /missions/{id}/report is, and it is the
+    // same report the mission thread reads. final_output is the answer; the tasks are the trail.
+    const d=await api('/missions/'+encodeURIComponent(card.dataset.mission)+'/report').catch(()=>null);
     const det=(d&&d.success&&d.data)||{};
     box.textContent=[
-      det.user_result||det.result||'',
+      det.final_output||det.raw_output||'',
       (det.tasks||[]).map(t=>`• ${t.title||''} — ${t.status||''}`).join('\n'),
     ].filter(Boolean).join('\n\n')||'No detail recorded.';
   }));
