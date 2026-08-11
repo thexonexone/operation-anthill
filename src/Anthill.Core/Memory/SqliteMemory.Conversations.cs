@@ -85,9 +85,10 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO conversation_turns
                     (id, conversation_id, ordinal, role, content, provider, model,
-                     tools_offered_json, tools_called_json, mission_id, created_at)
+                     tools_offered_json, tools_called_json, mission_id, prompt_tokens,
+                     completion_tokens, created_at)
                   VALUES (@id, @cid, @ord, @role, @content, @provider, @model,
-                          @offered, @called, @mission, @created)
+                          @offered, @called, @mission, @ptok, @ctok, @created)
                   ON CONFLICT(id) DO UPDATE SET content=@content, tools_called_json=@called, mission_id=@mission",
                 ("@id", turn.Id), ("@cid", turn.ConversationId), ("@ord", turn.Ordinal),
                 ("@role", turn.Role), ("@content", turn.Content),
@@ -96,6 +97,8 @@ public sealed partial class SqliteMemory
                 ("@offered", Json.SafeDumps(turn.ToolsOffered)),
                 ("@called", Json.SafeDumps(turn.ToolsCalled)),
                 ("@mission", (object?)turn.MissionId ?? DBNull.Value),
+                ("@ptok", (object?)turn.PromptTokens ?? DBNull.Value),
+                ("@ctok", (object?)turn.CompletionTokens ?? DBNull.Value),
                 ("@created", turn.CreatedAt.ToIso()));
         }
     }
@@ -116,8 +119,14 @@ public sealed partial class SqliteMemory
             ToolsOffered = Json.SafeLoadList(row.GetValueOrDefault("tools_offered_json")?.ToString()),
             ToolsCalled = Json.SafeLoadList(row.GetValueOrDefault("tools_called_json")?.ToString()),
             MissionId = row.GetValueOrDefault("mission_id")?.ToString(),
+            PromptTokens = ReadNullableInt(row.GetValueOrDefault("prompt_tokens")),
+            CompletionTokens = ReadNullableInt(row.GetValueOrDefault("completion_tokens")),
             CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         }).ToList();
+
+    /// <summary>Null stays null: an unreported token count must never rehydrate as zero.</summary>
+    private static int? ReadNullableInt(object? value) =>
+        value is null || value is DBNull ? null : Convert.ToInt32(value);
 
     /// <summary>
     /// Record what was decided about one side-effecting action.

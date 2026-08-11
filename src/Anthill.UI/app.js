@@ -4111,9 +4111,14 @@ async function chatOpen(id){
             // v0.3.8.46: each turn carries its recorded time — the stored created_at, rendered
             // local. Shown inline, small; the full ISO instant is in the title for auditing.
             const when=chatTurnTime(t.created_at);
+            // v0.3.8.46: token usage, only when the provider reported it. No number is shown for
+            // an unreported count — absence and zero are different facts.
+            const tok=(t.completion_tokens!=null||t.prompt_tokens!=null)
+              ? `<span class="chat-tok" title="prompt ${t.prompt_tokens??'?'} · completion ${t.completion_tokens??'?'} tokens">${(t.prompt_tokens??0)+(t.completion_tokens??0)} tok</span>`
+              : '';
             return `<div class="chat-turn ${mine?'user':'colony'}">
               <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
-                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}
+                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}${tok}
                 <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
             </div>`;
           }).join('')

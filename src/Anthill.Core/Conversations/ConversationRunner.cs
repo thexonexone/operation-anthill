@@ -32,7 +32,8 @@ public sealed record ConversationOutcome(
 /// The attribution is not decoration: capability-aware routing can substitute providers, and a
 /// transcript that cannot say who answered cannot be audited.
 /// </summary>
-public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error);
+public sealed record ConversationReply(bool Ok, string Content, string Provider, string Model, string? Error,
+    int? PromptTokens = null, int? CompletionTokens = null);
 
 /// <summary>
 /// v3.7.0 — the escalation boundary: what turns a conversation into a mission.
@@ -203,6 +204,9 @@ public sealed class ConversationRunner
             {
                 Provider = reply.Provider,
                 Model = reply.Model,
+                // v0.3.8.46: what the answer cost, when the provider says. Null is "not reported".
+                PromptTokens = reply.PromptTokens,
+                CompletionTokens = reply.CompletionTokens,
             });
             return new ConversationOutcome(ConversationMode.Chat, true, null,
                 $"answered by {reply.Provider}/{reply.Model}");

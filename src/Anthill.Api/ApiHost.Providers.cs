@@ -599,6 +599,9 @@ public static partial class ApiHost
                     ["provider"] = t.Provider, ["model"] = t.Model,
                     ["tools_offered"] = t.ToolsOffered, ["tools_called"] = t.ToolsCalled,
                     ["mission_id"] = t.MissionId, ["created_at"] = t.CreatedAt.ToIso(),
+                    // v0.3.8.46: null when the provider did not report — the UI shows nothing
+                    // rather than a fabricated zero.
+                    ["prompt_tokens"] = t.PromptTokens, ["completion_tokens"] = t.CompletionTokens,
                 }).ToList(),
                 // Refusals included. An audit asking "did it try to do X" needs those most, because
                 // they are the attempts nobody saw happen.
