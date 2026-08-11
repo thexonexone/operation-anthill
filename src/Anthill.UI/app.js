@@ -4383,6 +4383,47 @@ if(_composer){
   _composer.addEventListener('drop', e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) chatStageFiles(e.dataTransfer.files); });
 }
 
+/* v0.3.8.48 — the project picker. Shown when a conversation is about to be born outside any
+ * project: pick an active project or name a new one. Returns the project id, or null on cancel.
+ * Built as a real modal (CSP-safe bound handlers, focus into the list, Escape cancels). */
+let chatPendingProjectId=null;
+function chatPickProject(){
+  return new Promise(async resolve=>{
+    const r=await api('/projects');
+    const projects=((r&&r.data&&r.data.projects)||[]).filter(p=>!p.archived);
+    const ov=document.createElement('div');
+    ov.className='ui-modal-ov';
+    ov.innerHTML=`<div class="ui-modal" role="dialog" aria-label="Choose a project" style="max-width:440px;width:92%;">
+      <h3 style="margin:0 0 4px;font-size:13px;">Where does this conversation live?</h3>
+      <div class="sub" style="margin-bottom:10px;">Every conversation belongs to a project — its purpose and working directory travel with your messages.</div>
+      <div class="pick-list" style="max-height:220px;overflow-y:auto;margin-bottom:10px;">
+        ${projects.map(p=>`<button class="pick-row" data-pick="${escapeHtml(p.id)}">
+          <b>${escapeHtml(p.name||'Untitled')}</b>
+          <span>${p.conversations} conversation(s)</span></button>`).join('')
+          ||'<div class="hud-state">No projects yet — name your first one below.</div>'}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input class="provider-input" data-newname placeholder="Or start a new project…" style="flex:1" maxlength="120">
+        <button class="btn btn-primary" data-create>Create</button>
+        <button class="btn btn-ghost" data-cancel>Cancel</button>
+      </div></div>`;
+    const done=v=>{ ov.remove(); document.removeEventListener('keydown',esc,true); resolve(v); };
+    const esc=e=>{ if(e.key==='Escape'){ e.stopPropagation(); done(null); } };
+    document.addEventListener('keydown',esc,true);
+    ov.addEventListener('click',e=>{ if(e.target===ov) done(null); });
+    ov.querySelectorAll('.pick-row').forEach(b=>b.addEventListener('click',()=>done(b.dataset.pick)));
+    ov.querySelector('[data-cancel]').addEventListener('click',()=>done(null));
+    ov.querySelector('[data-create]').addEventListener('click',async ()=>{
+      const name=ov.querySelector('[data-newname]').value.trim();
+      if(!name) return;
+      const c=await api('/projects','POST',{name});
+      if(c&&c.success&&c.data) done(c.data.id);
+    });
+    document.body.appendChild(ov);
+    (ov.querySelector('.pick-row')||ov.querySelector('[data-newname]')).focus();
+  });
+}
+
 async function chatSend(mode){
   mode = mode==='mission' ? 'mission' : 'chat';
   const el=document.getElementById('chat-input');
@@ -4398,10 +4439,14 @@ async function chatSend(mode){
   let note='';
   try{
     if(!chatActiveId){
-      // First message creates the conversation. 'ask' is the policy a newcomer wants: the colony
-      // checks before it does anything that changes real files.
-      const c=await api('/conversations','POST',{ title: msg.slice(0,48), policy:'ask' });
-      if(!c||!c.success){ chatSetState((c&&c.message)||'Could not start.'); return; }
+      // v0.3.8.48: a conversation lives in a project — chosen, never invented. The picker
+      // resolves to a project id (existing or newly named by the operator) before anything is
+      // created; the message stays in the composer if they cancel.
+      const pid=chatPendingProjectId||await chatPickProject();
+      if(!pid){ if(el) el.value=msg; chatSetState('Pick a project to start this conversation in.'); return; }
+      chatPendingProjectId=null;
+      const c=await api('/conversations','POST',{ title: msg.slice(0,48), project_id: pid });
+      if(!c||!c.success){ if(el) el.value=msg; chatSetState((c&&c.message)||'Could not start.'); return; }
       chatActiveId=c.data.id;
       chatComposingNew=false;   // the new conversation exists; auto-open may resume
     }
@@ -4698,8 +4743,9 @@ async function loadProjectCards(){
     const pid=card.dataset.project;
     card.querySelector('.project-chat')?.addEventListener('click', async e=>{
       e.stopPropagation();
-      const r2=await api('/conversations','POST',{project_id:pid});
-      if(r2&&r2.success&&r2.data){ chatActiveId=r2.data.id; chatComposingNew=false; go('/chat'); chatOpen(r2.data.id); }
+      chatPendingProjectId=pid;   // the first message will create the conversation HERE
+      chatActiveId=null; chatComposingNew=true; go('/chat');
+      document.getElementById('chat-input')?.focus();
     });
     card.querySelector('.project-archive')?.addEventListener('click', async e=>{
       e.stopPropagation();

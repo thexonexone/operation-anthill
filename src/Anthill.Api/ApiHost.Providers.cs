@@ -335,26 +335,26 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<ConversationRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
 
-            var policy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var p)
-                ? p : EscalationPolicy.Ask;
             var who = CurrentUsername(ctx) ?? "operator";
 
-            // v0.3.8.47: one project per CONVERSATION — created here, at conversation start, never
-            // per message. The operator may instead pass an existing project_id (the Projects tab
-            // or a project's own "new conversation"); it must exist, or the link would dangle.
+            // v0.3.8.48 (directive correction of the .47 behaviour): a project is NOT created per
+            // conversation. The operator selects or creates one first — the UI's picker enforces
+            // that flow; the API enforces the invariant. This is what stops Projects collapsing
+            // into a list of one-conversation containers.
             var projectId = (body?.ProjectId ?? "").Trim();
-            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
-                return ApiJson.Error($"No project '{projectId}'.", "not_found");
             if (projectId.Length == 0)
-            {
-                var project = new Anthill.Core.Projects.Project
-                {
-                    Id = Guid.NewGuid().ToString("N")[..12],
-                    Name = string.IsNullOrWhiteSpace(body?.Title) ? "New conversation" : body!.Title!.Trim(),
-                };
-                Queen.Memory.SaveProject(project);
-                projectId = project.Id;
-            }
+                return ApiJson.Error("A conversation lives in a project. Pick one or create one first.", "project_required");
+            var owner = Queen.Memory.LoadProject(projectId);
+            if (owner is null) return ApiJson.Error($"No project '{projectId}'.", "not_found");
+            if (owner.Archived) return ApiJson.Error($"\"{owner.Name}\" is archived. Unarchive it to start new work there.", "bad_request");
+
+            // Policy: explicit request wins; otherwise the PROJECT's attributed default applies —
+            // and it applies with the project author's attribution, because that is who made the
+            // standing decision. No author anywhere = Ask. Fail closed, same rule as ever.
+            var policy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var p)
+                ? p : owner.EffectiveDefaultPolicy;
+            var policyBy = Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out _)
+                ? who : owner.DefaultPolicyBy;
 
             var conversation = new Conversation
             {
@@ -365,7 +365,7 @@ public static partial class ApiHost
                 ProjectId = projectId,
                 // Attribution is written for ANY standing permission. Ask needs none — nobody has to
                 // sign for the safe default.
-                PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
+                PolicySetBy = policy == EscalationPolicy.Ask ? null : policyBy,
                 PolicySetAt = policy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc(),
             };
 
