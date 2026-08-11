@@ -1196,6 +1196,21 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.46, found live: approving a MID-MISSION gate re-sends the message, and the re-send
+    /// meets the start_mission gate first — which ate the answer. The click approved nothing;
+    /// both actions sat waiting. The re-send restates the start_mission decision that is already
+    /// on record (a secondary gate can only exist inside an approved mission), so the approval
+    /// the operator clicked actually reaches its gate.
+    /// </summary>
+    [Fact]
+    public void ApprovingASecondaryGate_CarriesTheRecordedMissionApproval()
+    {
+        var approve = BodyOf(Ui("app.js"), "async function convApprove(id, action)");
+
+        Assert.Contains("if(action!=='start_mission') answers['start_mission']='approve';", approve);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces — per-mission
     /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.

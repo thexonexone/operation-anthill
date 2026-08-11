@@ -9356,6 +9356,12 @@ async function convApprove(id, action){
   const turns=(detail&&detail.data&&detail.data.turns)||[];
   const last=turns.length?turns[turns.length-1].content:'';
   const answers={}; answers[action]='approve';
+  // v0.3.8.46, found live: a MID-MISSION action (a tool gate the running mission raised) is
+  // approved by re-sending the message — and the re-send meets the start_mission gate FIRST,
+  // which ate the answer: the click approved nothing and both actions sat waiting. A secondary
+  // gate can only exist because start_mission was already approved (or covered by a standing
+  // policy) for this very message, so restating that recorded decision is not a new grant.
+  if(action!=='start_mission') answers['start_mission']='approve';
   const r=await api('/conversations/'+id+'/turns','POST',{ message:last||'proceed', mode:'mission', answers:answers });
   if(r&&r.data) convSay(r.data.summary||'Approved', r.data.started!==false);
   apiCacheBust('/conversations'); pollConversations();
