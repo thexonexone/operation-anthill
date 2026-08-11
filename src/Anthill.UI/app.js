@@ -414,8 +414,10 @@ PAGE_ENTER['overview']=()=>{
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
-PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli(); };
+PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli();
+  if(typeof refreshAgentCatalog==='function') refreshAgentCatalog(); };
 PAGE_ENTER['chat']=()=>{ if(typeof loadChat==='function') loadChat();
+  if(!lastAgentCatalog && typeof refreshAgentCatalog==='function') refreshAgentCatalog();
   document.getElementById('chat-input')?.focus(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
@@ -2604,6 +2606,15 @@ async function pollModelInfo(){
   }catch{}
 }
 
+/** An `agent:` provider id as the operator knows it. Null for anything else. */
+function AGENT_LABEL(provider){
+  const p=String(provider||'');
+  if(!p.startsWith('agent:')) return null;
+  const a=(lastAgentCatalog||[]).find(x=>x.provider===p);
+  return a ? a.name.replace(/ \(agent\)$/,'') : p.slice('agent:'.length);
+}
+let lastAgentCatalog = null;
+
 function renderStatusChip(){
   const s=lastSystemSummary; if(!s) return;
   const providers=s.routing_mode!=='local';
@@ -2622,11 +2633,17 @@ function renderStatusChip(){
   // detail beneath it cannot disagree. One distinct pair means one name; several means a count,
   // because inventing a winner among genuinely mixed routes would be a different lie.
   const routes = s.routes || [];
-  const pairs = [...new Set(routes.map(r => (r.provider || '') + '|' + (r.model || '')))];
-  if (pairs.length === 1 && routes.length) {
-    setEl('sc-model', routes[0].model || routes[0].provider || '—');
-  } else if (pairs.length > 1) {
-    setEl('sc-model', pairs.length + ' models');
+  const routeProviders = [...new Set(routes.map(r => r.provider || ''))];
+  const models = [...new Set(routes.map(r => r.model || ''))];
+  if (routes.length && routeProviders.length === 1) {
+    // Grouped by PROVIDER before model, and that ordering is the point. Routing every ant to
+    // Claude Code can still leave a stale model string on some rows — the agent ignores it — and
+    // counting distinct models would report "2 models" for a colony that is entirely on one agent.
+    // The provider is the answer to "what is running my ants"; the model only refines it.
+    const label = AGENT_LABEL(routeProviders[0]) || (models.length === 1 ? models[0] : routeProviders[0]);
+    setEl('sc-model', label);
+  } else if (routeProviders.length > 1) {
+    setEl('sc-model', routeProviders.length + ' providers');
   } else {
     setEl('sc-model', s.default_model || '—');
   }
@@ -4057,6 +4074,18 @@ function agentCliMsg(text, ok){
   el.style.display = text ? '' : 'none';
   el.textContent = text || '';
   el.style.color = ok ? 'var(--green)' : 'var(--red)';
+}
+
+/**
+ * Keep the provider catalogue for AGENT_LABEL, so the header chip can say "Claude Code" rather
+ * than the wire id `agent:claude-code`. Refreshed alongside the agents page rather than fetched
+ * separately: one more poll for a display name would not earn its request.
+ */
+async function refreshAgentCatalog(){
+  try{
+    const r=await api('/providers/catalog');
+    if(r&&r.success&&Array.isArray(r.data)) lastAgentCatalog=r.data.filter(p=>p.agent);
+  }catch(e){ /* the chip falls back to the id, which is still truthful */ }
 }
 
 async function loadAgentCli(force){
