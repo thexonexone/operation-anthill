@@ -1158,6 +1158,16 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .mission-node .mn-send{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.4);color:var(--hud-cyan);border-radius:5px;
   width:30px;height:28px;cursor:pointer;flex-shrink:0;font-size:13px;}
 .mission-node .mn-send:disabled{opacity:.4;cursor:not-allowed;}
+/* v3.8.39: installable coding agents */
+.agentcli-card{padding:12px 14px;margin-bottom:10px;}
+.agentcli-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.agentcli-name{font-weight:700;color:var(--text);font-size:13px;}
+.agentcli-vendor{font-size:10px;color:var(--dim);}
+.agentcli-sub{font-size:11px;color:var(--muted);margin:8px 0 10px;line-height:1.5;}
+.agentcli-sub code{font-family:var(--mono);font-size:10px;color:var(--hud-cyan);
+  background:rgba(34,211,238,.08);padding:1px 5px;border-radius:3px;}
+.agentcli-actions{display:flex;gap:8px;align-items:center;}
+.agentcli-msg{font-size:11px;margin-bottom:10px;}
 .mn-modes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
 /* v3.8.34: the mode row now says what it is FOR, and that skipping it is allowed. Four bare
    buttons read as a required choice a newcomer had no basis to make. */
@@ -2980,6 +2990,21 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <!-- --------------------------------------------------------------------
            PAGE: USERS
       --------------------------------------------------------------------- -->
+      <!-- v3.8.39: installable CLI agents. The colony can delegate a turn to Claude Code, Codex,
+           Gemini CLI and the rest; this is where an operator sees what exists, what is on this
+           machine, and installs one. -->
+      <div class="page page-scroll" id="page-agentcli">
+        <div class="page-hdr">
+          <div>
+            <h1>Agents</h1>
+            <div class="sub">Coding agents the colony can hand work to. Anthill starts them; you stay signed in to them yourself.</div>
+          </div>
+          <button class="btn btn-ghost" id="agentcli-reload">↺ Re-scan</button>
+        </div>
+        <div id="agentcli-msg" class="agentcli-msg" style="display:none;"></div>
+        <div id="agentcli-list"><div class="hud-state">Checking what's installed…</div></div>
+      </div>
+
       <div class="page page-scroll" id="page-users">
         <div class="page-hdr">
           <div>

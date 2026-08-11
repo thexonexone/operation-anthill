@@ -399,7 +399,8 @@ const PAGE_TITLES = {
   overview:'Dashboard', colony:'Topology', missions:'Missions', results:'Mission Results',
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Agents', events:'Events',
   activity:'Activity', pheromones:'Signals', homelab:'Infrastructure', antconfig:'Agents',
-  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users'
+  autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
+  agentcli:'Agents'   // v3.8.39: installable CLI agents
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -413,6 +414,7 @@ PAGE_ENTER['overview']=()=>{
 // workspace live, showPage() has already redirected /colony to the dashboard, so this never runs
 // and the topology stays mounted in one place for the whole session.
 PAGE_ENTER['colony']=()=>{ if(!workspaceHostsTopology()) topologyMountTo('colony'); };
+PAGE_ENTER['agentcli']=()=>{ if(typeof loadAgentCli==='function') loadAgentCli(); };
 
 // Domain icons (reuse the pre-redesign nav glyph set).
 const IAICON = {
@@ -468,6 +470,8 @@ const IA = [
     { label:'Agents', route:'/colony/agents', page:'antconfig', vis:'admin', tabs:[
       { label:'Configure', route:'/colony/agents/configure', page:'antconfig', vis:'admin' },
       { label:'Inspect', route:'/colony/agents/inspect', page:'antobs', vis:'admin' },
+      // v3.8.39: the coding agents the colony can delegate to, as opposed to its own ants.
+      { label:'Coding Agents', route:'/colony/agents/coding', page:'agentcli', vis:'admin' },
     ]},
     { label:'Signals', route:'/colony/signals', page:'pheromones', vis:'admin' },
     { label:'Model Routing', route:'/colony/model-routing', page:'settings', vis:'admin', stab:'models', tabs:[
@@ -3782,6 +3786,83 @@ async function loadAntObsDirectory(grid){
       `<div style="grid-column:1/-1;margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.08em;">COLONY DIRECTORY · ${total} ants — every registered role and worker with its duty</div>`+html);
   }catch(e){ /* directory is additive; telemetry cards above still render */ }
 }
+/* ── Coding agents (v3.8.39) ──────────────────────────────────────────────────────────────────
+ *
+ * Installable CLI agents the colony can delegate a turn to. Two facts are shown separately for
+ * every one, because they have different remedies and collapsing them prints the wrong
+ * instruction: whether it is INSTALLED on this host, and whether the operator has SIGNED IN to it.
+ *
+ * Anthill never holds the credential. The sign-in command is printed for the operator to run in
+ * their own terminal, under their own account, exactly as they would without Anthill — so there is
+ * nothing here to store, refresh or leak.
+ */
+function agentCliMsg(text, ok){
+  const el=document.getElementById('agentcli-msg'); if(!el) return;
+  el.style.display = text ? '' : 'none';
+  el.textContent = text || '';
+  el.style.color = ok ? 'var(--green)' : 'var(--red)';
+}
+
+async function loadAgentCli(force){
+  const list=document.getElementById('agentcli-list'); if(!list) return;
+  try{
+    const r=await api('/agents'+(force?'?refresh=true':''));
+    if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not read the agent list.')}</div>`; return; }
+    const d=r.data||{}, agents=d.agents||[];
+    if(!agents.length){ list.innerHTML='<div class="hud-state">No agents are catalogued in this build.</div>'; return; }
+
+    list.innerHTML = agents.map(a=>{
+      const installed=!!a.installed;
+      return `<div class="card agentcli-card">
+        <div class="agentcli-hd">
+          <!-- health-dot, not t-dot: t-dot's variants are severity names (info/warning/error) and
+               have no neutral member, so 'not installed' had nothing honest to render as. -->
+          <span class="health-dot ${installed?'ok':''}"></span>
+          <span class="agentcli-name">${escapeHtml(a.name||a.id)}</span>
+          <span class="agentcli-vendor">${escapeHtml(a.vendor||'')}</span>
+          ${installed?`<span class="hud-badge completed">Installed${a.version?' · '+escapeHtml(a.version):''}</span>`
+                     :`<span class="hud-badge">Not installed</span>`}
+          ${a.writes?`<span class="hud-badge pending" title="This agent edits files and runs commands. The colony confines it to a mission workspace.">Can make changes</span>`:''}
+        </div>
+        ${installed
+          ? `<div class="agentcli-sub">Sign in once in your own terminal if you have not already:
+               <code>${escapeHtml(a.auth_command||'')}</code></div>`
+          : `<div class="agentcli-sub">${escapeHtml(a.unavailable_reason||'Not found on this machine.')}</div>`}
+        <div class="agentcli-actions">
+          ${installed?'':(d.install_enabled
+            ? `<button class="btn btn-primary agentcli-install" data-agent="${escapeHtml(a.id)}">Install</button>`
+            : `<button class="btn" disabled title="${escapeHtml(d.install_disabled_reason||'')}">Install unavailable</button>`)}
+          <a class="btn btn-ghost" href="${escapeHtml(a.docs_url||'#')}" target="_blank" rel="noopener noreferrer">Docs</a>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Bound after render, not inline: the console's CSP is script-src 'self' with no unsafe-inline,
+    // so an onclick attribute here would be silently dropped by the browser.
+    list.querySelectorAll('.agentcli-install').forEach(btn=>{
+      btn.addEventListener('click', ()=>installAgentCli(btn.dataset.agent, btn));
+    });
+  }catch(e){
+    list.innerHTML=`<div class="hud-state err">Could not read the agent list: ${escapeHtml(e.message||'')}</div>`;
+  }
+}
+
+async function installAgentCli(id, btn){
+  const agent=id||'';
+  if(!await uiConfirm('Install this agent on this machine?\n\nIt runs the vendor\'s install command '
+    + 'here and changes this host. You will still need to sign in to it yourself afterwards.')) return;
+  if(btn){ btn.disabled=true; btn.textContent='Installing…'; }
+  agentCliMsg('Installing — a package install can take a few minutes.', true);
+  try{
+    const r=await api('/agents/'+encodeURIComponent(agent)+'/install','POST');
+    if(r&&r.success){ agentCliMsg((r.message||'Installed.')+' '+((r.data&&r.data.next_step)||''), true); }
+    else{ agentCliMsg((r&&r.message)||'Install failed.', false); }
+  }catch(e){ agentCliMsg('Install failed: '+(e.message||''), false); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='Install'; } loadAgentCli(true); }
+}
+
+document.getElementById('agentcli-reload')?.addEventListener('click',()=>loadAgentCli(true));
+
 async function onAntRecentToggle(det){
   if(!det.open || det.dataset.loaded) return;
   det.dataset.loaded='1';
