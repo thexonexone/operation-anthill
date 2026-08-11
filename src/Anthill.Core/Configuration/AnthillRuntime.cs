@@ -405,6 +405,8 @@ public static class AnthillRuntime
     /// is how a gate becomes decoration.
     /// </summary>
     public static IReadOnlyList<string> UserToolAllowedHosts = Array.Empty<string>();
+    /// <summary>v0.3.8.40 — whether approved container actions may run. Off by default; dry run always works.</summary>
+    public static bool DockerExecuteEnabled = false;
     /// <summary>v0.3.8.40 — Desktop or Server. Resolved once at Initialize; see DeploymentMode.cs.</summary>
     public static DeploymentMode Deployment = DeploymentMode.Desktop;
     /// <summary>Why <see cref="Deployment"/> holds that value, in a sentence an operator can act on.</summary>
@@ -663,6 +665,7 @@ public static class AnthillRuntime
         // The probe is cheap (three guarded file reads) and the alternative is each caller
         // detecting for itself, which is how two of them come to disagree on the one host where
         // the distinction matters.
+        DockerExecuteEnabled = config.DockerExecuteEnabled;
         (Deployment, DeploymentReason, DeploymentDetected) =
             DeploymentModeResolver.Resolve(config.DeploymentMode, DeploymentModeResolver.Probe());
         EnableOperatorShell = config.OperatorShellEnabled;
@@ -1022,6 +1025,7 @@ public static class AnthillRuntime
         ["homelab_incident_sweep_seconds"] = HomelabIncidentSweepSeconds,
         // v0.3.8.40 — reported as the mode AND why. A mode with no stated reason is one nobody can
         // argue with when detection surprises them.
+        ["docker_execute_enabled"] = DockerExecuteEnabled,
         ["deployment_mode"] = Deployment.ToString().ToLowerInvariant(),
         ["deployment_reason"] = DeploymentReason,
         ["deployment_detected"] = DeploymentDetected,
