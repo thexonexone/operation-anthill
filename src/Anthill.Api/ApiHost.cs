@@ -245,6 +245,11 @@ public static partial class ApiHost
             Console.WriteLine($"Open the colony console at http://{AnthillRuntime.ApiHost}:{AnthillRuntime.ApiPort}/ui");
         }
 
+        // v0.3.8.48: schedules execute while the HOST runs — started here, said plainly in the
+        // UI, and never claimed to be a cloud.
+        Queen.Scheduler.Start();
+        Console.WriteLine("Project scheduler started (runs execute while this host is running).");
+
         if (autostart)
         {
             // v2.26.0: autostart honours a durable STOP. The Director process starts (so status,
