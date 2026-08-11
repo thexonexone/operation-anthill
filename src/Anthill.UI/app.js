@@ -4060,7 +4060,7 @@ async function loadToolsView(){
   try{
     const r=await api('/tools');
     if(!r||!r.success){ el.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load tools.')}</div>`; return; }
-    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[];
+    const d=r.data||{}, tools=d.tools||[], fitness=d.model_fitness||[], userTools=d.user_tools||[];
     // v0.3.8.41 — an unresolved route is not an unfit model. See the Tools panel for the reasoning.
     const unresolved=fitness.filter(f=>f.unresolved), unfit=fitness.filter(f=>!f.fit && !f.unresolved);
     const head =
@@ -4074,11 +4074,49 @@ async function loadToolsView(){
              <div class="agentcli-sub">${unfit.map(f=>escapeHtml(f.role)+' — '+escapeHtml((f.unmet||[]).join('; '))).join('<br>')}</div></div>`
           : `<div class="card agentcli-card"><div class="agentcli-hd"><span class="health-dot ok"></span>
                <span class="agentcli-name">All ${fitness.length} ants are routed to a capable model.</span></div></div>`;
-    el.innerHTML = head
-      + `<div class="card agentcli-card"><div class="agentcli-hd">
-           <span class="agentcli-name">${tools.length} tools registered</span></div>
-         <div class="agentcli-sub">${tools.map(t=>escapeHtml(t.name||t)).join(', ')||'None.'}</div></div>`;
-  }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
+    // v0.3.8.41 — this said "${tools.length} tools registered" and listed every name.
+    //
+    // `/tools` reports tools that are NOT registered too — planned, disabled, or rejected — each
+    // with a status and a reason. Counting them all as "registered" and listing them beside the
+    // working ones told an operator that a tool which refuses at dispatch is available. The Tools
+    // & Routing widget has always split these correctly; this page, added in v0.3.8.40 to promote
+    // that surface, quietly dropped the distinction it existed to show.
+    const registered = tools.filter(t=>t.status==='registered');
+    const broken = tools.filter(t=>t.status!=='registered');
+    const rejected = userTools.filter(u=>u.status==='rejected');
+    const blocked = d.roles_blocked_by_missing_tools||[];
+
+    const toolsHtml = `<div class="card agentcli-card"><div class="agentcli-hd">
+           <span class="health-dot ${broken.length?'':'ok'}"></span>
+           <span class="agentcli-name">${registered.length} of ${tools.length} tools dispatchable</span></div>
+         <div class="agentcli-sub">${registered.map(t=>escapeHtml(t.name||t)).join(', ')||'None.'}</div></div>`
+      + (broken.length
+          ? `<div class="card agentcli-card"><div class="agentcli-hd">
+               <span class="health-dot"></span>
+               <span class="agentcli-name">${broken.length} tool(s) cannot be dispatched</span></div>
+             <div class="agentcli-sub">${broken.map(t=>escapeHtml(t.name||'')+' — '
+                 +escapeHtml(TOOL_STATUS_LABEL[t.status]||t.status||'')).join('<br>')}</div></div>`
+          : '');
+
+    // A stored definition that did not register is present in the editor and not callable, which
+    // without this reads exactly like the tool being broken at runtime.
+    const rejectedHtml = rejected.length
+      ? `<div class="card agentcli-card"><div class="agentcli-hd">
+           <span class="health-dot"></span>
+           <span class="agentcli-name">${rejected.length} operator-defined tool(s) rejected</span></div>
+         <div class="agentcli-sub">${rejected.map(u=>escapeHtml(u.name)+' — '
+             +escapeHtml((u.problems||[]).join('; ')||'no reason recorded')).join('<br>')}</div></div>`
+      : '';
+
+    const blockedHtml = blocked.length
+      ? `<div class="card agentcli-card"><div class="agentcli-hd">
+           <span class="health-dot"></span>
+           <span class="agentcli-name">${blocked.length} role(s) authorised to dispatch nothing</span></div>
+         <div class="agentcli-sub">${escapeHtml(blocked.join(', '))}</div></div>`
+      : '';
+
+    el.innerHTML = head + toolsHtml + rejectedHtml + blockedHtml;
+  }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'Could not load tools.')}</div>`; }
 }
 
 PAGE_ENTER['projects']=()=>loadProjects();
