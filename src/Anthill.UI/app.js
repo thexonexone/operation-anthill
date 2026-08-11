@@ -4145,15 +4145,16 @@ let chatStreamAbort=null;   // v0.3.8.44: the in-flight streamed turn, abortable
  * bubble yields to the recorded turn (fingerprint reset + chatOpen), so what remains on screen is
  * exactly what the database holds. A provider that cannot stream simply produces no deltas and
  * the done frame carries the whole reply — one code path, no fake trickle. */
+let chatStreamLiveEl=null;   // the provisional bubble, held as a REFERENCE — not an id lookup
 async function chatConsumeStream(response){
   const thread=document.getElementById('chat-thread');
-  let live=null, raw='';
+  let raw='';
   const ensureBubble=()=>{
-    if(live) return;
-    live=document.createElement('div');
-    live.className='chat-turn colony'; live.id='chat-stream-live';
-    live.innerHTML='<span class="who">Colony</span><span class="chat-stream-text"></span>';
-    thread?.appendChild(live);
+    if(chatStreamLiveEl) return;
+    chatStreamLiveEl=document.createElement('div');
+    chatStreamLiveEl.className='chat-turn colony';
+    chatStreamLiveEl.innerHTML='<span class="who">Colony</span><span class="chat-stream-text"></span>';
+    thread?.appendChild(chatStreamLiveEl);
   };
   const reader=response.body.getReader();
   const decoder=new TextDecoder();
@@ -4172,7 +4173,7 @@ async function chatConsumeStream(response){
         raw+=JSON.parse(data);
         ensureBubble();
         const nearBottom=thread.scrollTop+thread.clientHeight>=thread.scrollHeight-48;
-        live.querySelector('.chat-stream-text').innerHTML=chatRenderContent(raw);
+        chatStreamLiveEl.querySelector('.chat-stream-text').innerHTML=chatRenderContent(raw);
         if(nearBottom) thread.scrollTop=thread.scrollHeight;
       }else if(ev==='done'){
         outcome=JSON.parse(data);
@@ -4234,7 +4235,7 @@ async function chatSend(mode){
   }
   finally{
     chatStreamAbort=null; chatSetComposerStreaming(false);
-    document.getElementById('chat-stream-live')?.remove();
+    chatStreamLiveEl?.remove(); chatStreamLiveEl=null;
     chatFingerprint='';   // the provisional bubble yields to the recorded turn
     apiCacheBust('/conversations'); loadChat();
     await chatOpen(chatActiveId);

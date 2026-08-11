@@ -1217,8 +1217,10 @@ public class UiShellTests
         var send = BodyOf(js, "async function chatSend(mode)");
         Assert.Contains("stream:true", send);
         Assert.Contains("chatStreamAbort=new AbortController()", send);
-        // The provisional bubble is removed and the recorded turn re-rendered — screen equals DB.
-        Assert.Contains("document.getElementById('chat-stream-live')?.remove()", send);
+        // The provisional bubble is held as a REFERENCE (an id lookup for a dynamic node is an
+        // orphan to the markup guard, and a weaker pattern besides), removed on completion, and
+        // the recorded turn re-rendered — screen equals DB.
+        Assert.Contains("chatStreamLiveEl?.remove(); chatStreamLiveEl=null;", send);
         Assert.Contains("chatFingerprint=''", send);
 
         // ■ is abort, wired at the same button; the server binds the abort into the model call.
