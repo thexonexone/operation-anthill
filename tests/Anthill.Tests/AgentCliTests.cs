@@ -47,6 +47,43 @@ public class AgentCliTests
     }
 
     /// <summary>
+    /// An agent id may never collide with a reasoning provider id. v3.8.39.
+    ///
+    /// Both are offered in the same routing list and a role's route stores ONE provider string, so a
+    /// collision would not fail — it would silently route an ant to the wrong thing, and the symptom
+    /// would be an ant that answers plausibly while never running the tool it was given. The
+    /// `agent:` prefix is what prevents it, and this is the test that keeps the prefix load-bearing
+    /// rather than decorative.
+    /// </summary>
+    [Fact]
+    public void AgentIds_NeverCollideWithAReasoningProviderId()
+    {
+        var providerIds = ProviderCatalog.All.Select(p => p.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var a in AgentCliCatalog.All)
+            Assert.DoesNotContain(a.Id, providerIds);
+    }
+
+    /// <summary>
+    /// Every agent carries a non-empty model name, and that is load-bearing.
+    ///
+    /// `ModelRouter.GetClient` treats a NON-KEYED provider with an empty model as a local model
+    /// needing resolution, and hands it to `LocalModelResolver` — which would ask Ollama to resolve
+    /// a model for Claude Code, a question with no possible answer. The catalogue entry the API
+    /// composes uses DisplayName as `default_model` precisely so that branch is never reached, so an
+    /// agent whose name were blank would route into it.
+    /// </summary>
+    [Fact]
+    public void EveryAgent_HasAModelNameTheRouterCanCarry()
+    {
+        foreach (var a in AgentCliCatalog.All)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(a.DisplayName));
+            Assert.Equal(a.DisplayName.Trim(), a.DisplayName);
+        }
+    }
+
+    /// <summary>
     /// The injection guard. Operator text is passed as ONE argv entry, never spliced into a string
     /// a shell could read.
     ///

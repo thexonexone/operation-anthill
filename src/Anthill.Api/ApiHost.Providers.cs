@@ -46,7 +46,44 @@ public static partial class ApiHost
                 ["provider"] = p.Id, ["name"] = p.Name, ["kind"] = p.Kind, ["description"] = p.Description,
                 ["requires_key"] = p.RequiresKey, ["default_endpoint"] = p.DefaultEndpoint,
                 ["key_help_url"] = p.KeyHelpUrl, ["default_model"] = p.DefaultModel, ["models"] = p.Models,
+                ["agent"] = false, ["installed"] = true,
             }).ToList();
+
+            /*
+             * v3.8.39 — installed CLI agents join the routing choices, so an ant can be given one.
+             *
+             * Composed HERE rather than in ProviderCatalog because that list lives in Anthill.SDK,
+             * which is contracts-only and may not reference a module. The API is the composition
+             * root, already constructs the reasoning module, and joining two catalogues is exactly
+             * the work a composition root exists to do.
+             *
+             * `default_model` is the agent's own name and must never be empty. ModelRouter treats a
+             * non-keyed provider with no model as a local model needing resolution, and would ask
+             * Ollama to resolve a model for Claude Code — an answer that cannot exist. Carrying a
+             * model keeps that branch unreached.
+             *
+             * Uninstalled agents are listed too, marked installed:false. Hiding them would leave an
+             * operator wondering why Anthill offers Codex on one screen and not another; showing
+             * them with their state is the rule the agents page already follows.
+             */
+            catalog.AddRange(AgentCliDiscovery.Scan().Select(s => new Dictionary<string, object?>
+            {
+                ["provider"] = s.Agent.Id,
+                ["name"] = s.Agent.DisplayName + " (agent)",
+                ["kind"] = "agent",
+                ["description"] = s.Installed
+                    ? $"Delegates the turn to {s.Agent.DisplayName} on this machine, signed in as you. "
+                    + "Anthill starts it and never holds your credentials."
+                    : $"Not installed. {s.Agent.InstallCommand}",
+                ["requires_key"] = false,
+                ["default_endpoint"] = null,
+                ["key_help_url"] = s.Agent.DocsUrl,
+                ["default_model"] = s.Agent.DisplayName,
+                ["models"] = new[] { s.Agent.DisplayName },
+                ["agent"] = true,
+                ["installed"] = s.Installed,
+            }));
+
             return ApiJson.Ok(catalog);
         });
 
