@@ -357,7 +357,7 @@ public sealed partial class SqliteMemory : IDisposable
         @"CREATE TABLE IF NOT EXISTS schedule_runs (
             id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL, project_id TEXT NOT NULL,
             conversation_id TEXT, status TEXT NOT NULL DEFAULT 'running',
-            trigger TEXT NOT NULL DEFAULT 'schedule', summary TEXT,
+            "trigger" TEXT NOT NULL DEFAULT 'schedule', summary TEXT,
             started_at TEXT NOT NULL, finished_at TEXT)",
         @"CREATE INDEX IF NOT EXISTS idx_schedule_runs ON schedule_runs(schedule_id, started_at)",
         @"CREATE TABLE IF NOT EXISTS conversations (
