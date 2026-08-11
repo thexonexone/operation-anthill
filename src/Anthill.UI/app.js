@@ -427,7 +427,8 @@ const IAICON = {
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-4-.9L3 21l1.9-4.6A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/></svg>',
   projects:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   tools:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/></svg>',
-  scheduled:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  // v0.3.8.41: a target, not a clock. The clock was the tell — see the IA entry below.
+  objectives:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg>',
   dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
   monitoring:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   operations:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
@@ -446,7 +447,23 @@ const IA = [
   // the capability report, Scheduled is the Director's standing objectives. No new backend.
   { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },
   { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
-  { type:'item', id:'scheduled', label:'Scheduled', route:'/scheduled', page:'objboard', vis:'admin' },
+  // v0.3.8.41 — was `Scheduled` at `/scheduled`, and neither word was true.
+  //
+  // ANTHILL HAS NO SCHEDULING SUBSYSTEM. There is no cron, no interval, no next-run and no cadence
+  // anywhere in the objective model, the Director, or the API — the check is mechanical: nothing in
+  // `src/` matches those terms. An operator clicking "Scheduled" was promised a feature that does
+  // not exist, and the console said so itself one click later, because PAGE_TITLE already names
+  // this page `Objectives`. The comment above admitted it in passing ("Scheduled is the Director's
+  // standing objectives") and the icon was a clock.
+  //
+  // It also created a SECOND route to one page: `/scheduled` and
+  // `/operations/automation/objectives` both render `objboard`, while PAGE_ROUTE maps that page
+  // back to the latter — so the canonical route and the one in the nav disagreed. Pointing this
+  // entry at the canonical route removes the duplicate rather than renaming it.
+  //
+  // The top-row promotion stays: v0.3.8.40 put it there because standing objectives were reachable
+  // only as a dashboard widget an operator had to know to enable. That was right; the label was not.
+  { type:'item', id:'objectives', label:'Objectives', route:'/operations/automation/objectives', page:'objboard', vis:'admin' },
   { type:'item', id:'dashboard', label:'Dashboard', route:'/dashboard', page:'overview', vis:'all' },
   { type:'domain', id:'monitoring', label:'Monitoring', vis:'all', sections:[
     { label:'Activity', route:'/monitoring/activity', page:'activity', vis:'all', tabs:[
