@@ -1401,9 +1401,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
            configuration above the two fields anyone actually needs. It is still here, still does
            the same thing, but it no longer greets a newcomer with a question they cannot answer
            and do not need to. -->
-      <label class="auth-label">Username</label>
+      <label class="auth-label" for="login-user">Username</label>
       <input class="auth-input" id="login-user" type="text" placeholder="admin" autocomplete="username">
-      <label class="auth-label">Password</label>
+      <label class="auth-label" for="login-pass">Password</label>
       <input class="auth-input" id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password">
       <div class="auth-err" id="auth-err"></div>
       <button class="auth-btn" id="login-btn">Sign In</button>
@@ -1422,13 +1422,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
       <div style="font-size:12px;color:var(--queen);margin-bottom:14px;padding:8px 10px;background:var(--queen-dim);border-radius:var(--r);border:1px solid rgba(251,191,36,.25);">
         ✦ First launch — create your admin account
       </div>
-      <label class="auth-label">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
+      <label class="auth-label" for="setup-apibase">API Base URL <span style="font-weight:400;color:var(--dim)">(leave blank for local)</span></label>
       <input class="auth-input" id="setup-apibase" type="url" placeholder="http://host:8713" autocomplete="off">
-      <label class="auth-label">Admin Username</label>
+      <label class="auth-label" for="setup-user">Admin Username</label>
       <input class="auth-input" id="setup-user" type="text" placeholder="admin" value="admin" autocomplete="username">
       <label class="auth-label">Password <span style="font-weight:400;color:var(--dim)">(min 8 characters)</span></label>
       <input class="auth-input" id="setup-pass" type="password" placeholder="••••••••" autocomplete="new-password">
-      <label class="auth-label">Confirm Password</label>
+      <label class="auth-label" for="setup-pass2">Confirm Password</label>
       <input class="auth-input" id="setup-pass2" type="password" placeholder="••••••••" autocomplete="new-password">
       <div class="auth-err" id="setup-err-msg"></div>
       <button class="auth-btn" id="setup-btn">Create Admin Account</button>
