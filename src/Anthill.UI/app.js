@@ -3886,6 +3886,18 @@ async function onObjCardToggle(det){
   }catch(e){ box.innerHTML=`<span style="color:var(--red)">Could not load detail: ${escapeHtml(e.message)}</span>`; }
 }
 document.getElementById('ob-refresh')?.addEventListener('click',loadObjBoard);
+// v0.3.8.47: the self-improvement seed — fills the form, the OPERATOR presses Add. Deliberately
+// not a silent create: a standing objective that starts missions against the colony's own repo
+// is exactly the kind of thing that should be read before it exists.
+document.getElementById('obj-seed-improve')?.addEventListener('click',()=>{
+  const t=document.getElementById('obj-title'), c=document.getElementById('obj-charter'), m=document.getElementById('obj-maxruns');
+  if(t) t.value='Improve ANTHILL';
+  if(c) c.value='Review the ANTHILL codebase for technical debt, incomplete implementations, and missing tests. '
+    +'Each run: pick ONE small, verifiable improvement, propose it as a patch with tests, and stop. '
+    +'Never widen scope; every change goes through the normal review and approval pipeline.';
+  if(m) m.value='10';
+  setEl('obj-msg','Seeded — read it, adjust it, then press Add. Nothing was created yet.');
+});
 
 // -- Ant Inspector + Performance Observatory (v1.8.23, UI Phase 8) ------------
 const ANTOBS_CASTES=[

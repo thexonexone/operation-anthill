@@ -2832,6 +2832,11 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
             <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
+            <!-- v0.3.8.47: the self-improvement seed. One click fills the form with a standing
+                 objective aimed at ANTHILL's own codebase — the Director turns it into missions
+                 through the same plan → patch → tester/soldier → verification → approval pipeline
+                 every mission uses. Nothing new is claimed; the colony's machinery points at itself. -->
+            <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-ghost" id="obj-seed-improve" title="Fill the form with a standing self-improvement objective aimed at ANTHILL's own code">🐜 Seed: improve ANTHILL</button></div>
           </div>
           <div class="save-msg text-green" id="obj-msg" style="margin-top:6px;"></div>
         </div>
