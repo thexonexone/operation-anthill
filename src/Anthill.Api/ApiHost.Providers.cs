@@ -479,6 +479,41 @@ public static partial class ApiHost
             }
         });
 
+        // v0.3.8.48: change a conversation's approval policy in place — the selector in the chat
+        // header. Attributed on every change; Ask clears attribution (the safe default needs no
+        // signature). This changes which OPERATOR PROMPTS appear; it never touches authentication,
+        // role permissions, workspace boundaries, capability gates, or verification requirements.
+        app.MapPost("/conversations/{id}/policy", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var conversation = Queen.Memory.LoadConversation(id);
+            if (conversation is null) return ApiJson.Error($"No conversation '{id}'.", "not_found");
+            ConversationRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ConversationRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            if (!Enum.TryParse<EscalationPolicy>(body?.Policy, ignoreCase: true, out var policy))
+                return ApiJson.Error("Policy must be ask, autoapprove, or bypass.", "bad_request");
+
+            var who = CurrentUsername(ctx) ?? "operator";
+            Queen.Memory.SaveConversation(conversation with
+            {
+                Policy = policy,
+                PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
+                PolicySetAt = policy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc(),
+                UpdatedAt = AnthillTime.NowUtc(),
+            });
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["policy"] = policy.ToString().ToLowerInvariant(),
+                ["set_by"] = policy == EscalationPolicy.Ask ? null : who,
+            }, policy switch
+            {
+                EscalationPolicy.Ask => "Manual approval — the colony asks before side effects.",
+                EscalationPolicy.AutoApprove => "Automatically approve — eligible side effects proceed, every decision recorded.",
+                _ => "Skip all approvals — prompts are skipped; security gates and verification still apply.",
+            });
+        });
+
         // Cancel: marks the conversation AND signals the work it started. Reports how many live
         // pieces were signalled, so "stopped two missions" is distinguishable from "nothing running".
         app.MapPost("/conversations/{id}/cancel", (HttpContext ctx, string id) =>
