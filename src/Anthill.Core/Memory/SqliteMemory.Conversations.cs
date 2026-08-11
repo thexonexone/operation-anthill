@@ -27,11 +27,11 @@ public sealed partial class SqliteMemory
             NonQuery(conn, null,
                 @"INSERT INTO conversations
                     (id, title, role, policy, policy_set_by, policy_set_at, mission_ids_json,
-                     cancelled, pinned, created_at, updated_at)
-                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @pinned, @created, @updated)
+                     cancelled, pinned, project_id, created_at, updated_at)
+                  VALUES (@id, @title, @role, @policy, @by, @at, @missions, @cancelled, @pinned, @project, @created, @updated)
                   ON CONFLICT(id) DO UPDATE SET
                     title=@title, role=@role, policy=@policy, policy_set_by=@by, policy_set_at=@at,
-                    mission_ids_json=@missions, cancelled=@cancelled, pinned=@pinned, updated_at=@updated",
+                    mission_ids_json=@missions, cancelled=@cancelled, pinned=@pinned, project_id=@project, updated_at=@updated",
                 ("@id", conversation.Id),
                 ("@title", conversation.Title),
                 ("@role", conversation.Role),
@@ -44,6 +44,7 @@ public sealed partial class SqliteMemory
                 ("@missions", Json.SafeDumps(conversation.MissionIds)),
                 ("@cancelled", conversation.Cancelled ? 1 : 0),
                 ("@pinned", conversation.Pinned ? 1 : 0),
+                ("@project", (object?)conversation.ProjectId ?? DBNull.Value),
                 ("@created", conversation.CreatedAt.ToIso()),
                 ("@updated", conversation.UpdatedAt.ToIso()));
         }
@@ -181,6 +182,7 @@ public sealed partial class SqliteMemory
         MissionIds = Json.SafeLoadList(row.GetValueOrDefault("mission_ids_json")?.ToString()),
         Cancelled = Convert.ToInt64(row.GetValueOrDefault("cancelled") ?? 0L) != 0,
         Pinned = Convert.ToInt64(row.GetValueOrDefault("pinned") ?? 0L) != 0,
+        ProjectId = row.GetValueOrDefault("project_id") is null or DBNull ? null : row.GetValueOrDefault("project_id")?.ToString(),
         CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()),
         UpdatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("updated_at")?.ToString()),
     };

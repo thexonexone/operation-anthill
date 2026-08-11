@@ -333,6 +333,14 @@ public sealed partial class SqliteMemory : IDisposable
             lease_until TEXT, started_at TEXT NOT NULL, finished_at TEXT)",
         // The claim reads this index on every attempt to take a task, so it is not optional.
         @"CREATE INDEX IF NOT EXISTS idx_task_attempts_live ON task_attempts(task_id, state, lease_until)",
+        // v0.3.8.47: projects — the long-lived container a conversation lives in. One is created
+        // with every new CONVERSATION (not per message), and an operator can make one by hand
+        // with a name, a markdown purpose, and an optional working-directory path.
+        @"CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',
+            description_md TEXT NOT NULL DEFAULT '', path TEXT,
+            archived INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
         @"CREATE TABLE IF NOT EXISTS conversations (
             id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'researcher',
             policy TEXT NOT NULL DEFAULT 'Ask', policy_set_by TEXT, policy_set_at TEXT,
@@ -547,6 +555,8 @@ public sealed partial class SqliteMemory : IDisposable
         // v0.3.8.46: per-turn token accounting. NULLABLE, no default — a provider that does not
         // report usage is unknown, and unknown recorded as 0 would understate every total.
         AddMissing("conversation_turns", new() { ["prompt_tokens"] = "INTEGER", ["completion_tokens"] = "INTEGER" });
+        // v0.3.8.47: which project a conversation belongs to. Null for legacy conversations.
+        AddMissing("conversations", new() { ["project_id"] = "TEXT" });
         // v2.26.0: what KIND of signal a trail carries. Planning may only read procedural /
         // routing categories; operational telemetry must not steer strategy.
         AddMissing("pheromone_trails", new() { ["signal_category"] = "TEXT NOT NULL DEFAULT ''" });

@@ -402,7 +402,7 @@ const PAGE_TITLES = {
   patches:'Changes & Approvals', objboard:'Objectives', antobs:'Roles', events:'Events',
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
-  agentcli:'Coding Agents', chat:'Chat', projects:'Mission Workspaces', toolsview:'Tools',
+  agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
   readiness:'Readiness'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
@@ -456,7 +456,7 @@ const IA = [
   // v0.3.8.42 (§5 of the truthfulness audit): "Projects" implied project management the backend
   // does not have. The backend concept is a mission workspace — the isolated checkout a mission
   // works in — so the surface now says that. Route unchanged; bookmarks keep working.
-  { type:'item', id:'projects', label:'Mission Workspaces', route:'/projects', page:'projects', vis:'all' },
+  { type:'item', id:'projects', label:'Projects', route:'/projects', page:'projects', vis:'all' },   // v0.3.8.47: truthful again — the backend now HAS projects
   { type:'item', id:'tools', label:'Tools', route:'/tools-view', page:'toolsview', vis:'all' },
   // v0.3.8.41/42 — was `Scheduled` at `/scheduled`, and neither word was true.
   //
@@ -4591,7 +4591,70 @@ async function loadToolsView(){
   }catch(e){ el.innerHTML=`<div class="hud-state err">${escapeHtml(e.message||'')}</div>`; }
 }
 
-PAGE_ENTER['projects']=()=>loadProjects();
+PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
+
+/* v0.3.8.47 — real Projects. One is created with every new conversation; here they are made by
+ * hand: a name, a markdown purpose that travels with every message in the project, an optional
+ * working-directory path. Claude-projects shaped, ANTHILL rules: the purpose is context the
+ * model SEES, the path is recorded and shown to it — no surface claims wiring that isn't built. */
+async function loadProjectCards(){
+  const host=document.getElementById('project-cards'); if(!host) return;
+  const r=await api('/projects');
+  if(!(r&&r.success)){ host.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load projects.')}</div>`; return; }
+  const list=(r.data&&r.data.projects)||[];
+  if(!list.length){ host.innerHTML='<div class="hud-state">No projects yet — your first conversation creates one, or make one here.</div>'; return; }
+  host.innerHTML=list.map(p=>`<div class="card project-card${p.archived?' archived':''}" data-project="${escapeHtml(p.id)}" style="margin-bottom:8px;cursor:pointer;">
+    <div style="padding:11px 13px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <b style="color:var(--text);font-size:13px;">${escapeHtml(p.name||'Untitled project')}</b>
+        ${p.archived?'<span class="chat-tok">archived</span>':''}
+        <span style="flex:1"></span>
+        <span style="font-size:10px;color:var(--dim)">${p.conversations} conversation(s) · ${p.missions} mission(s)</span>
+      </div>
+      ${p.description_md?`<div style="font-size:11px;color:var(--muted);margin-top:5px;white-space:pre-wrap;">${escapeHtml(String(p.description_md).slice(0,240))}</div>`:''}
+      ${p.path?`<div style="font-size:10px;color:var(--dim);margin-top:4px;">📁 ${escapeHtml(p.path)}</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-ghost project-chat">＋ New conversation here</button>
+        <button class="btn btn-ghost project-archive">${p.archived?'Unarchive':'Archive'}</button>
+      </div>
+    </div>
+  </div>`).join('');
+  host.querySelectorAll('.project-card').forEach(card=>{
+    const pid=card.dataset.project;
+    card.querySelector('.project-chat')?.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const r2=await api('/conversations','POST',{project_id:pid});
+      if(r2&&r2.success&&r2.data){ chatActiveId=r2.data.id; chatComposingNew=false; go('/chat'); chatOpen(r2.data.id); }
+    });
+    card.querySelector('.project-archive')?.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const arch=card.classList.contains('archived');
+      await api('/projects/'+encodeURIComponent(pid),'PATCH',{archived:!arch});
+      loadProjectCards();
+    });
+  });
+}
+document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+document.getElementById('project-new-btn')?.addEventListener('click', ()=>{
+  const f=document.getElementById('project-new-form'); if(f){ f.hidden=!f.hidden; if(!f.hidden) document.getElementById('project-new-name')?.focus(); }
+});
+document.getElementById('project-new-cancel')?.addEventListener('click', ()=>{
+  const f=document.getElementById('project-new-form'); if(f) f.hidden=true;
+});
+document.getElementById('project-new-create')?.addEventListener('click', async ()=>{
+  const name=document.getElementById('project-new-name')?.value.trim();
+  if(!name){ setEl('project-new-msg','A project needs a name.'); return; }
+  const r=await api('/projects','POST',{
+    name, description_md:document.getElementById('project-new-desc')?.value||'',
+    path:document.getElementById('project-new-path')?.value.trim()||null,
+  });
+  setEl('project-new-msg', r&&r.success?'Created.':(r&&r.message)||'Create failed.');
+  if(r&&r.success){
+    ['project-new-name','project-new-desc','project-new-path'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+    document.getElementById('project-new-form').hidden=true;
+    loadProjectCards();
+  }
+});
 PAGE_ENTER['toolsview']=()=>loadToolsView();
 document.getElementById('projects-reload')?.addEventListener('click',()=>loadProjects());
 document.getElementById('toolsview-reload')?.addEventListener('click',()=>loadToolsView());

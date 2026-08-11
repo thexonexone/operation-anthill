@@ -412,6 +412,19 @@ public sealed class ConversationRequest
     public string? Role { get; set; }
     /// <summary>ask | autoapprove | bypass. Recorded with its author when it is not ask.</summary>
     public string? Policy { get; set; }
+    /// <summary>v0.3.8.47: an existing project to join. Absent = a new project is created.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("project_id")]
+    public string? ProjectId { get; set; }
+}
+
+/// <summary>v0.3.8.47: create or update a project. Null fields on PATCH mean "leave unchanged".</summary>
+public sealed class ProjectRequest
+{
+    public string? Name { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("description_md")]
+    public string? DescriptionMd { get; set; }
+    public string? Path { get; set; }
+    public bool? Archived { get; set; }
 }
 
 /// <summary>v3.7.0: one turn, with the operator's answers for anything it needs permission to do.</summary>

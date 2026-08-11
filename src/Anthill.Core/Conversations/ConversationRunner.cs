@@ -406,6 +406,20 @@ public sealed class ConversationRunner
             + "operator is asking for real multi-step work, say that missions are started by asking "
             + "for the work explicitly — never claim work you did not do.");
         sb.AppendLine();
+        // v0.3.8.47: the project's purpose is standing context — the point of writing one. Same
+        // shape as Claude's project instructions: it travels with every turn, clearly labelled as
+        // the operator's own framing, not the colony's conclusion.
+        if (!string.IsNullOrWhiteSpace(conversation.ProjectId)
+            && _memory.LoadProject(conversation.ProjectId!) is { } project
+            && (!string.IsNullOrWhiteSpace(project.DescriptionMd) || !string.IsNullOrWhiteSpace(project.Path)))
+        {
+            sb.AppendLine($"This conversation belongs to the project \"{project.Name}\". "
+                + "The operator describes its purpose as:");
+            if (!string.IsNullOrWhiteSpace(project.DescriptionMd)) sb.AppendLine(project.DescriptionMd.Trim());
+            if (!string.IsNullOrWhiteSpace(project.Path))
+                sb.AppendLine($"The project's working directory is: {project.Path}");
+            sb.AppendLine();
+        }
         foreach (var t in recent)
             sb.AppendLine((string.Equals(t.Role, "user", StringComparison.OrdinalIgnoreCase) ? "Operator: " : "Colony: ") + t.Content);
         sb.AppendLine("Colony:");

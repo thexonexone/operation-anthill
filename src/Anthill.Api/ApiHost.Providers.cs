@@ -339,12 +339,30 @@ public static partial class ApiHost
                 ? p : EscalationPolicy.Ask;
             var who = CurrentUsername(ctx) ?? "operator";
 
+            // v0.3.8.47: one project per CONVERSATION — created here, at conversation start, never
+            // per message. The operator may instead pass an existing project_id (the Projects tab
+            // or a project's own "new conversation"); it must exist, or the link would dangle.
+            var projectId = (body?.ProjectId ?? "").Trim();
+            if (projectId.Length > 0 && Queen.Memory.LoadProject(projectId) is null)
+                return ApiJson.Error($"No project '{projectId}'.", "not_found");
+            if (projectId.Length == 0)
+            {
+                var project = new Anthill.Core.Projects.Project
+                {
+                    Id = Guid.NewGuid().ToString("N")[..12],
+                    Name = string.IsNullOrWhiteSpace(body?.Title) ? "New conversation" : body!.Title!.Trim(),
+                };
+                Queen.Memory.SaveProject(project);
+                projectId = project.Id;
+            }
+
             var conversation = new Conversation
             {
                 Id = Guid.NewGuid().ToString("N")[..12],
                 Title = (body?.Title ?? "").Trim(),
                 Role = string.IsNullOrWhiteSpace(body?.Role) ? "researcher" : body!.Role!.Trim(),
                 Policy = policy,
+                ProjectId = projectId,
                 // Attribution is written for ANY standing permission. Ask needs none — nobody has to
                 // sign for the safe default.
                 PolicySetBy = policy == EscalationPolicy.Ask ? null : who,
@@ -502,6 +520,94 @@ public static partial class ApiHost
                         ["needs_operator"] = state.NeedsOperator,
                         ["updated_at"] = c.UpdatedAt.ToIso(),
                     };
+                }).ToList(),
+            });
+        });
+
+        /*
+         * v0.3.8.47 — projects. One per conversation (created at conversation start), or made by
+         * hand here with a name, a markdown purpose, and an optional working-directory path. The
+         * purpose travels into the project's conversations as standing context; the path is
+         * recorded and given to the model as context — no surface claims deeper wiring than that.
+         */
+        app.MapGet("/projects", (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["projects"] = Queen.Memory.LoadProjects().Select(p =>
+                {
+                    var convs = Queen.Memory.LoadProjectConversations(p.Id);
+                    return new Dictionary<string, object?>
+                    {
+                        ["id"] = p.Id, ["name"] = p.Name, ["description_md"] = p.DescriptionMd,
+                        ["path"] = p.Path, ["archived"] = p.Archived,
+                        ["conversations"] = convs.Count,
+                        ["missions"] = convs.Sum(c => c.MissionIds.Count),
+                        ["updated_at"] = p.UpdatedAt.ToIso(),
+                    };
+                }).ToList(),
+            });
+        });
+
+        app.MapPost("/projects", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            ProjectRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var name = (body?.Name ?? "").Trim();
+            if (name.Length == 0) return ApiJson.Error("A project needs a name.", "bad_request");
+
+            var project = new Anthill.Core.Projects.Project
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Name = name,
+                DescriptionMd = (body?.DescriptionMd ?? "").Trim(),
+                Path = string.IsNullOrWhiteSpace(body?.Path) ? null : body!.Path!.Trim(),
+            };
+            Queen.Memory.SaveProject(project);
+            return ApiJson.Ok(new Dictionary<string, object?> { ["id"] = project.Id },
+                $"Project \"{project.Name}\" created.");
+        });
+
+        app.MapPatch("/projects/{id}", async (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            ProjectRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+
+            Queen.Memory.SaveProject(project with
+            {
+                Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
+                DescriptionMd = body?.DescriptionMd ?? project.DescriptionMd,
+                Path = body?.Path is null ? project.Path
+                     : (string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim()),
+                Archived = body?.Archived ?? project.Archived,
+                UpdatedAt = AnthillTime.NowUtc(),
+            });
+            return ApiJson.Ok(null, "Project updated.");
+        });
+
+        // The conversations inside one project — what the Projects page opens.
+        app.MapGet("/projects/{id}", (HttpContext ctx, string id) =>
+        {
+            var auth = RequireAuth(ctx, "read_status"); if (auth is not null) return auth;
+            var project = Queen.Memory.LoadProject(id);
+            if (project is null) return ApiJson.Error($"No project '{id}'.", "not_found");
+            return ApiJson.Ok(new Dictionary<string, object?>
+            {
+                ["id"] = project.Id, ["name"] = project.Name,
+                ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
+                ["archived"] = project.Archived,
+                ["conversations"] = Queen.Memory.LoadProjectConversations(id).Select(c => new Dictionary<string, object?>
+                {
+                    ["id"] = c.Id, ["title"] = c.Title, ["pinned"] = c.Pinned,
+                    ["cancelled"] = c.Cancelled, ["mission_ids"] = c.MissionIds,
+                    ["updated_at"] = c.UpdatedAt.ToIso(),
                 }).ToList(),
             });
         });
