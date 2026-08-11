@@ -417,6 +417,18 @@ public sealed class ConversationRequest
     public string? ProjectId { get; set; }
 }
 
+/// <summary>v0.3.8.47: import a transcript. Turns become history; nothing is invented for them.</summary>
+public sealed class ImportRequest
+{
+    public string? Title { get; set; }
+    public List<ImportTurn>? Turns { get; set; }
+}
+public sealed class ImportTurn
+{
+    public string? Role { get; set; }
+    public string? Content { get; set; }
+}
+
 /// <summary>v0.3.8.47: create or update a project. Null fields on PATCH mean "leave unchanged".</summary>
 public sealed class ProjectRequest
 {

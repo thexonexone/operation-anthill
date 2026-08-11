@@ -3176,6 +3176,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
+            <!-- v0.3.8.47: import — the inverse of export. A JSON file of {title, turns:[{role,content}]}. -->
+            <button class="btn btn-ghost" id="chat-import" title="Import a conversation from a JSON file">⇪ Import</button>
+            <input type="file" id="chat-import-file" accept=".json,application/json" hidden>
             <label class="sr-only" for="chat-search">Search conversations</label>
             <input class="chat-search" id="chat-search" type="search"
                    placeholder="Search title and messages…" autocomplete="off">

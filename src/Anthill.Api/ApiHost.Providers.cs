@@ -612,6 +612,42 @@ public static partial class ApiHost
             });
         });
 
+        // v0.3.8.47: import — the inverse of export, for bringing a transcript in from another
+        // ANTHILL (or anywhere that can produce the JSON shape). The imported turns are recorded
+        // as HISTORY: no provider or model is invented for them, and the conversation gets its
+        // own project like any other. Nothing about an import pretends this colony did the work.
+        app.MapPost("/conversations/import", async (HttpContext ctx) =>
+        {
+            var auth = RequireAuth(ctx, "run_mission"); if (auth is not null) return auth;
+            ImportRequest? body;
+            try { body = await ctx.Request.ReadFromJsonAsync<ImportRequest>(); }
+            catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
+            var turns = body?.Turns ?? new List<ImportTurn>();
+            if (turns.Count == 0) return ApiJson.Error("Nothing to import — no turns.", "bad_request");
+            if (turns.Count > 2000) return ApiJson.Error("Too many turns to import (max 2000).", "bad_request");
+
+            var title = string.IsNullOrWhiteSpace(body?.Title) ? "Imported conversation" : body!.Title!.Trim();
+            var project = new Anthill.Core.Projects.Project
+                { Id = Guid.NewGuid().ToString("N")[..12], Name = title };
+            Queen.Memory.SaveProject(project);
+            var conversation = new Conversation
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Title = title, ProjectId = project.Id,
+            };
+            Queen.Memory.SaveConversation(conversation);
+            var ordinal = 0;
+            foreach (var t in turns)
+            {
+                var role = string.Equals(t.Role, "assistant", StringComparison.OrdinalIgnoreCase) ? "assistant" : "user";
+                Queen.Memory.SaveConversationTurn(new ConversationTurn(
+                    Guid.NewGuid().ToString("N")[..12], conversation.Id, ++ordinal, role, t.Content ?? ""));
+            }
+            return ApiJson.Ok(new Dictionary<string, object?>
+                { ["id"] = conversation.Id, ["turns"] = ordinal },
+                $"Imported {ordinal} turn(s) into \"{title}\".");
+        });
+
         // v0.3.8.46: pin / unpin. Two explicit endpoints rather than a toggle, so a stale rail
         // can never invert the operator's intent by firing the toggle against old state.
         app.MapPost("/conversations/{id}/pin", (HttpContext ctx, string id) => SetPinned(ctx, id, true));

@@ -4166,15 +4166,22 @@ async function chatOpen(id){
             const tok=(t.completion_tokens!=null||t.prompt_tokens!=null)
               ? `<span class="chat-tok" title="prompt ${t.prompt_tokens??'?'} · completion ${t.completion_tokens??'?'} tokens">${(t.prompt_tokens??0)+(t.completion_tokens??0)} tok</span>`
               : '';
+            // v0.3.8.47: ✎ on your own messages — puts the text back in the composer to revise
+            // and RESEND as a new turn. The record is an audit trail; editing never rewrites it.
             return `<div class="chat-turn ${mine?'user':'colony'}">
               <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
                 ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}${tok}
+                ${mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:''}
                 <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
             </div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
       // CSP is script-src 'self' with no unsafe-inline, so handlers are bound, never inlined.
-      thread.querySelectorAll('.chat-copy').forEach(b=>b.addEventListener('click',async ()=>{
+      thread.querySelectorAll('.chat-edit').forEach(b=>b.addEventListener('click',()=>{
+        const inp=document.getElementById('chat-input');
+        if(inp){ inp.value=chatTurnContents[+b.dataset.i]||''; inp.focus(); }
+      }));
+      thread.querySelectorAll('.chat-copy:not(.chat-edit)').forEach(b=>b.addEventListener('click',async ()=>{
         try{ await navigator.clipboard.writeText(chatTurnContents[+b.dataset.i]||''); b.textContent='✓'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
         catch{ b.textContent='✕'; setTimeout(()=>{ b.textContent='⧉'; },1200); }
       }));
@@ -4477,6 +4484,21 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   document.getElementById('chat-input')?.focus();
   loadChat();
 });
+// v0.3.8.47: import — the inverse of export. Reads a JSON file, sends it whole, opens the result.
+// The file is parsed HERE so a malformed one fails with a message instead of a 400 round-trip.
+document.getElementById('chat-import')?.addEventListener('click', ()=>document.getElementById('chat-import-file')?.click());
+document.getElementById('chat-import-file')?.addEventListener('change', async e=>{
+  const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+  try{
+    const parsed=JSON.parse(await file.text());
+    const turns=Array.isArray(parsed.turns)?parsed.turns:Array.isArray(parsed)?parsed:null;
+    if(!turns||!turns.length){ chatSetState('Import: no turns found in that file.'); return; }
+    const r=await api('/conversations/import','POST',{title:parsed.title||file.name.replace(/\.json$/i,''), turns},30000);
+    if(r&&r.success&&r.data){ chatSetState(r.message||'Imported.'); chatComposingNew=false; chatOpen(r.data.id); loadChat(); }
+    else chatSetState((r&&r.message)||'Import failed.');
+  }catch(err){ chatSetState('Import: that file is not valid JSON.'); }
+});
+
 // v0.3.8.46: the rail search box — debounced, and Escape clears it.
 let chatSearchTimer=null;
 document.getElementById('chat-search')?.addEventListener('input', e=>{
