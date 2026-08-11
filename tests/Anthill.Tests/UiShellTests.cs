@@ -1198,6 +1198,35 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.44: the streamed turn, and the properties that keep it honest. Deltas render
+    /// through the SAME escape-first chatRenderContent every recorded turn uses (streaming changes
+    /// WHEN text appears, never what is allowed to appear); the provisional bubble yields to the
+    /// recorded turn on completion, so what remains on screen is exactly what the database holds;
+    /// and aborting is real — the ■ send button aborts the fetch, whose RequestAborted token the
+    /// server binds into ModelCallScope, so cancellation reaches the provider.
+    /// </summary>
+    [Fact]
+    public void StreamedTurns_RenderEscapedDeltas_AndYieldToTheRecord()
+    {
+        var js = Ui("app.js");
+
+        var consume = BodyOf(js, "async function chatConsumeStream(response)");
+        Assert.Contains("chatRenderContent(raw)", consume);   // escape-first, same renderer as recorded turns
+        Assert.Contains("nearBottom", consume);               // reading position preserved while streaming
+
+        var send = BodyOf(js, "async function chatSend(mode)");
+        Assert.Contains("stream:true", send);
+        Assert.Contains("chatStreamAbort=new AbortController()", send);
+        // The provisional bubble is removed and the recorded turn re-rendered — screen equals DB.
+        Assert.Contains("document.getElementById('chat-stream-live')?.remove()", send);
+        Assert.Contains("chatFingerprint=''", send);
+
+        // ■ is abort, wired at the same button; the server binds the abort into the model call.
+        Assert.Contains("chatStreamAbort.abort()", js);
+        Assert.Contains("ModelCallScope.Enter(ctx.RequestAborted)", ApiHostSource.All());
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§9/§14): a failed role registry is a STATE the operator sees, never a fiction.
     /// buildNodes used to invent six "Legacy executable ant" roles whenever /colony/registry had
     /// not answered, and the legend padded itself from a hardcoded list — so a dead endpoint drew
