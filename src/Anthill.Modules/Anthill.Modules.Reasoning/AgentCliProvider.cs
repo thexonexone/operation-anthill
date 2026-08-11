@@ -112,10 +112,19 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt);
         var streamedText = new System.Text.StringBuilder();
         string? resultText = null;
+        var sawTokenDelta = false;
         Action<string> sink = !hasStreamMode ? onDelta : line =>
         {
+            var isTokenDelta = line.Contains("\"stream_event\"", StringComparison.Ordinal);
             var (text, result) = ParseStreamEvent(line);
-            if (text is not null) { streamedText.Append(text); onDelta(text); }
+            if (text is not null)
+            {
+                // Once token deltas flow, the whole-message assistant event that follows them is
+                // a repeat of text the operator already watched arrive — emitting it would double
+                // the answer on screen.
+                if (isTokenDelta) sawTokenDelta = true;
+                if (isTokenDelta || !sawTokenDelta) { streamedText.Append(text); onDelta(text); }
+            }
             if (result is not null) resultText = result;
         };
         var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
@@ -159,6 +168,15 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
             var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
             if (type == "result" && root.TryGetProperty("result", out var r))
                 return (null, r.GetString());
+            // Token-level deltas (--include-partial-messages): the event wraps the API's own
+            // content_block_delta. When these arrive, whole-message assistant events are SKIPPED
+            // by the caller's dedupe below being unnecessary — deltas and the result are enough.
+            if (type == "stream_event" && root.TryGetProperty("event", out var ev)
+                && ev.TryGetProperty("type", out var et) && et.GetString() == "content_block_delta"
+                && ev.TryGetProperty("delta", out var d)
+                && d.TryGetProperty("type", out var dt) && dt.GetString() == "text_delta"
+                && d.TryGetProperty("text", out var dx))
+                return (dx.GetString(), null);
             if (type == "assistant" && root.TryGetProperty("message", out var m)
                 && m.TryGetProperty("content", out var c)
                 && c.ValueKind == System.Text.Json.JsonValueKind.Array)

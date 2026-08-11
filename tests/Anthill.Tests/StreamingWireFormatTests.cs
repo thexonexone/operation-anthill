@@ -104,6 +104,17 @@ public class StreamingWireFormatTests
         Assert.Equal("done and verified", result);
     }
 
+    /// <summary>--include-partial-messages: the wrapped content_block_delta is a token delta.</summary>
+    [Fact]
+    public void AgentStreamEvent_TokenDelta_IsText()
+    {
+        var (text, result) = Anthill.Modules.Reasoning.AgentCliProvider.ParseStreamEvent(
+            """{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hum"}}}""");
+
+        Assert.Equal("hum", text);
+        Assert.Null(result);
+    }
+
     /// <summary>Verbose noise, tool events, and non-JSON lines are silence, never junk deltas.</summary>
     [Theory]
     [InlineData("""{"type":"system","subtype":"init"}""")]
