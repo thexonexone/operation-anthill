@@ -82,6 +82,42 @@ Composer Play⇄Stop; pane open/close/hand-off in both directions (canvas parent
 state and rail badge; all three registry-failure states (absent / stale / recovered) simulated
 against the live page; v0.3.8.42 in the header.
 
+## 9b. The live walkthrough (spec §19), performed — not mocked
+
+Run against the composed runtime with the `conversation` route on `agent:claude-code` and the
+full twelve-role roster enabled (v0.3.8.41 default):
+
+1. **Chat answers through a routed agent.** A conversational turn was answered by Claude Code,
+   recorded as an assistant turn with provider/model attribution, rendered by the live poll, and
+   the state line settled to idle. The same mechanism accepts any provider in Providers & Model
+   Routing — the point of routing it.
+2. **Mission entry through Chat.** The ⚒ request produced the in-thread escalation gate ("It
+   wants to start_mission — nothing happens until you say so"); the operator's Allow started the
+   real mission, linked to the conversation.
+3. **Watched live.** `doing: running mission 49a47921…`; `/graph` showed the real tasks advancing
+   (Research → Build → Verify), the Colony pane open beside the conversation throughout.
+4. **Canonical result.** Mission history reported `complete` with the agent-authored answer.
+5. **Full Colony round trip.** Open full Colony handed the one canvas home; returning to Chat
+   restored the same conversation with the typed draft intact.
+6. **Memory.** The archivist recorded memory candidates for the mission (server log:
+   "Archived 2 memory candidate(s)"); 72 pheromone trails present via `/pheromones/json`.
+
+The walkthrough found and closed three defects the tests had not: the pane's mission note read
+`/jobs`, which cannot see conversation-escalated missions; `Doing()` claimed "running mission"
+forever after settlement (fixed against the canonical evaluation — the chat state line, rail badge
+and pane note all read it, so all three stopped lying together); and "New conversation" had been
+silently undone by the rail's auto-open.
+
+## 9c. The merged workstream
+
+The parallel branch (v0.3.8.41 base — full roster default, agent workspace confinement, fitness
+graded against the resolved model — plus four console fixes) merged with each overlapping fix
+resolved to its union: Objectives keeps its top-row promotion under its truthful label on the
+canonical route; the Tools page renders through the one shared renderer carrying the
+unresolved-route distinction; registry failure keeps the stale/absent split plus the loading
+state. History was consolidated to one release commit per the one-version-one-commit guard, which
+this branch briefly violated and the guard caught.
+
 ## 10. Known limitations and open work
 
 - The remote reasoning endpoint (`http://10.10.10.57:11434`) refuses connections in the test
