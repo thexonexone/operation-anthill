@@ -19,7 +19,7 @@ namespace Anthill.Modules.Reasoning;
 /// refused login is AuthError. An ant seeing NotAvailable can route elsewhere; an ant seeing a
 /// string beginning "ERROR:" could only guess.
 /// </summary>
-public sealed class AgentCliProvider : IReasoningProvider
+public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningProvider
 {
     private readonly AgentCli _agent;
     private readonly TimeSpan _timeout;
@@ -76,6 +76,47 @@ public sealed class AgentCliProvider : IReasoningProvider
             return Fail(Classify(detail, stderr), Describe(detail));
         }
 
+        if (string.IsNullOrWhiteSpace(stdout))
+            return Fail(ModelCallOutcome.Empty, $"{_agent.DisplayName} exited cleanly but said nothing.");
+
+        return new ModelResponse
+        {
+            Status = ModelCallOutcome.Ok,
+            Content = stdout.Trim(),
+            Provider = _agent.Id,
+            Model = _agent.DisplayName,
+            FinishReason = "exit_0",
+        };
+    }
+
+    /// <summary>
+    /// v0.3.8.47 — the same run, streamed: stdout lines reach the operator as the agent writes
+    /// them. Everything else is Send's behaviour verbatim — same confinement check, same
+    /// no-retry rule (an agent turn is not idempotent), same classification of a bad exit. The
+    /// ambient ModelCallScope token kills the process on cancel, so the ■ reaches the agent.
+    /// </summary>
+    public ModelResponse SendStreaming(ModelRequest request, Action<string> onDelta, int retries = 2)
+    {
+        var prompt = Flatten(request);
+        if (string.IsNullOrWhiteSpace(prompt))
+            return Fail(ModelCallOutcome.ConfigError, "No prompt to send.");
+        var confinement = Confinement();
+        if (confinement is not null) return confinement;
+        _ = retries;   // deliberately ignored — see Send.
+
+        var args = AgentCliCatalog.BuildArgs(_agent, prompt);
+        var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
+            _agent.Binary, args, _timeout, onDelta, ModelCallScope.Current, _workingDirectory);
+
+        if (!started)
+            return Fail(ModelCallOutcome.NotAvailable,
+                $"{_agent.DisplayName} is not installed. Install it from the Agents page, or with: "
+                + AgentCliCatalog.InstallHint(_agent));
+        if (exit != 0)
+        {
+            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            return Fail(Classify(detail, stderr), Describe(detail));
+        }
         if (string.IsNullOrWhiteSpace(stdout))
             return Fail(ModelCallOutcome.Empty, $"{_agent.DisplayName} exited cleanly but said nothing.");
 
