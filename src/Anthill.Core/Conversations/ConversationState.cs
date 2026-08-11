@@ -67,7 +67,7 @@ public static class ConversationStateReader
 
         return new ConversationState(
             conversationId,
-            Doing: Doing(conversation, turns, waiting),
+            Doing: Doing(memory, conversation, turns, waiting),
             Did: did,
             WaitingOn: waiting,
             conversation.EffectivePolicy,
@@ -78,14 +78,24 @@ public static class ConversationStateReader
     /// The present tense, in the order an operator cares about: cancelled beats waiting, waiting
     /// beats working, and "nothing yet" is a real answer rather than a blank.
     /// </summary>
-    private static string Doing(Conversation conversation, IReadOnlyList<ConversationTurn> turns,
-        IReadOnlyList<string> waiting)
+    private static string Doing(SqliteMemory memory, Conversation conversation,
+        IReadOnlyList<ConversationTurn> turns, IReadOnlyList<string> waiting)
     {
         if (conversation.Cancelled) return "cancelled";
         if (waiting.Count > 0)
             return $"waiting for an operator decision on: {string.Join(", ", waiting)}";
         if (conversation.MissionIds.Count > 0)
-            return $"running mission {conversation.MissionIds[^1]}";
+        {
+            // v0.3.8.42, found by the live walkthrough: this said "running mission X" FOREVER —
+            // the exact stored-status lie the class doc above warns about, computed once and never
+            // re-checked. The canonical evaluation is written when a mission settles; its absence
+            // means the work is genuinely still in flight. A settled mission's account lives in
+            // the transcript and mission history, and idle is spelled "".
+            var last = conversation.MissionIds[^1];
+            if (memory.LoadMissionEvaluation(last) is null)
+                return $"running mission {last}";
+            return "";
+        }
         if (turns.Count == 0) return "no turns yet";
         // v0.3.8.42: "conversational work" used to be returned here FOREVER — replies are produced
         // synchronously inside the turn, so a persistent working state was a claim about work this

@@ -85,6 +85,28 @@ public class ConversationStateTests : IDisposable
     }
 
     /// <summary>
+    /// v0.3.8.42, found by the live walkthrough: a linked mission read "running" FOREVER — the
+    /// exact stored-status lie this class's own doc warns about, computed once and never
+    /// re-checked. The canonical evaluation is written when a mission settles; its absence means
+    /// the work is genuinely in flight, and its presence means the claim must stop.
+    /// </summary>
+    [Fact]
+    public void ASettledMission_IsNoLongerClaimedRunning()
+    {
+        Save(Chat() with { MissionIds = new[] { "m-settled" } });
+        Assert.Equal("running mission m-settled", Read().Doing);   // no evaluation yet: in flight
+
+        _memory.SaveMission(new Anthill.Core.Domain.Mission { Id = "m-settled", Goal = "walkthrough" });
+        _memory.SaveMissionEvaluation(new Anthill.Core.Outcomes.MissionEvaluation(
+            MissionId: "m-settled", OutcomeCode: "completed_verified", StructuralStatus: "complete",
+            VerificationStatus: "verified", DeliverableStatus: "delivered", StopReason: null,
+            EvaluatorVersion: "test", EvaluatedAt: DateTime.UtcNow.ToString("o"),
+            Explanation: "settled in test"));
+
+        Assert.Equal("", Read().Doing);
+    }
+
+    /// <summary>
     /// The state that matters most: work stopped, and it stopped because it needs a human. This is
     /// the one condition where nothing moves until the operator acts, so it is a first-class
     /// property rather than something a UI has to infer.
