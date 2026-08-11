@@ -3793,7 +3793,7 @@ const OB_LANES=[
   ['looping','Looping','var(--orange)'],
   ['failed','Failed','var(--red)'],
 ];
-PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin') loadObjBoard(); };
+PAGE_ENTER['objboard']=()=>{ if(ROLE==='admin'){ objLoadProjectNames().then(loadObjBoard); } };
 function objLane(o){
   const st=(o.status||'').toLowerCase();
   const end=o.end_reason||(o.retired_code==='looping_goals'?'retired_looping':null);
@@ -3807,6 +3807,13 @@ function objLane(o){
   if(st==='active') return 'active';
   if(st==='pending') return 'backlog';
   return 'active';
+}
+/* v0.3.8.48 — objectives are project-owned. The board shows each objective's project (or the
+ * word "unassigned" for legacy rows) and links back to the owning workspace. */
+let objProjectNames={};
+async function objLoadProjectNames(){
+  const r=await api('/projects');
+  objProjectNames=Object.fromEntries(((r&&r.data&&r.data.projects)||[]).map(p=>[p.id,p.name]));
 }
 async function loadObjBoard(){
   const board=document.getElementById('ob-board'); if(!board) return;
@@ -3833,6 +3840,10 @@ function objCard(o){
   return `<details class="ob-card" data-obj="${o.id}" data-ontoggle="onObjCardToggle(this)">
     <summary>
       <div class="oc-title">${escapeHtml(o.title||'(untitled)')}</div>
+      <div class="oc-project" title="${o.project_id?'Owned by this project — click to open':'Legacy objective with no project owner'}">${
+        o.project_id
+          ? `<a href="#/projects/${escapeHtml(o.project_id)}">${escapeHtml(objProjectNames[o.project_id]||o.project_id)}</a>`
+          : 'unassigned'}</div>
       <div class="oc-meta">
         <span class="ob-chip">runs ${o.run_count??0}${o.max_runs?'/'+o.max_runs:''}</span>
         <span class="ob-chip" title="Success EMA">ema ${ema}</span>

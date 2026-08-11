@@ -520,7 +520,9 @@ public sealed class ProviderUpsertRequest
 }
 public sealed class ObjectiveRequest
 {
-    public string? Title { get; set; }
+    public string? Title { get; set;     [System.Text.Json.Serialization.JsonPropertyName("project_id")]
+    public string? ProjectId { get; set; }
+}
     public string? Charter { get; set; }
     public int? Priority { get; set; }
     [System.Text.Json.Serialization.JsonPropertyName("max_runs")] public int? MaxRuns { get; set; }
