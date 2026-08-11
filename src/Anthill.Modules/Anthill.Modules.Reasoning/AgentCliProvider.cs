@@ -104,9 +104,25 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
         if (confinement is not null) return confinement;
         _ = retries;   // deliberately ignored — see Send.
 
-        var args = AgentCliCatalog.BuildArgs(_agent, prompt);
+        // v0.3.8.47: agents WITH a streaming mode (Claude Code's stream-json) get real deltas —
+        // each stdout line is an NDJSON event, and only its TEXT reaches the operator. Agents
+        // without one keep honest line streaming. The final content comes from the result event
+        // when there is one, because raw NDJSON is transport, not answer.
+        var hasStreamMode = _agent.StreamArgs is not null;
+        var args = AgentCliCatalog.BuildStreamArgs(_agent, prompt);
+        var streamedText = new System.Text.StringBuilder();
+        string? resultText = null;
+        Action<string> sink = !hasStreamMode ? onDelta : line =>
+        {
+            var (text, result) = ParseStreamEvent(line);
+            if (text is not null) { streamedText.Append(text); onDelta(text); }
+            if (result is not null) resultText = result;
+        };
         var (started, stdout, stderr, exit) = AgentCliDiscovery.RunStreaming(
-            _agent.Binary, args, _timeout, onDelta, ModelCallScope.Current, _workingDirectory);
+            _agent.Binary, args, _timeout, sink, ModelCallScope.Current, _workingDirectory);
+        if (hasStreamMode && exit == 0)
+            stdout = !string.IsNullOrWhiteSpace(resultText) ? resultText
+                   : streamedText.Length > 0 ? streamedText.ToString() : stdout;
 
         if (!started)
             return Fail(ModelCallOutcome.NotAvailable,
@@ -128,6 +144,35 @@ public sealed class AgentCliProvider : IReasoningProvider, IStreamingReasoningPr
             Model = _agent.DisplayName,
             FinishReason = "exit_0",
         };
+    }
+
+    /// <summary>
+    /// One NDJSON stream event → (delta text, final result). Unparseable or uninteresting lines
+    /// are (null, null): verbose noise stays out of the transcript. Never throws.
+    /// </summary>
+    internal static (string? Text, string? Result) ParseStreamEvent(string line)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(line);
+            var root = doc.RootElement;
+            var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
+            if (type == "result" && root.TryGetProperty("result", out var r))
+                return (null, r.GetString());
+            if (type == "assistant" && root.TryGetProperty("message", out var m)
+                && m.TryGetProperty("content", out var c)
+                && c.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var block in c.EnumerateArray())
+                    if (block.TryGetProperty("type", out var bt) && bt.GetString() == "text"
+                        && block.TryGetProperty("text", out var tx))
+                        sb.Append(tx.GetString());
+                return (sb.Length > 0 ? sb.ToString() : null, null);
+            }
+            return (null, null);
+        }
+        catch { return (null, null); }
     }
 
     /// <summary>
