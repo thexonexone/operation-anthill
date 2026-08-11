@@ -107,6 +107,10 @@ public class DesktopShellTests
             Read(".github", "workflows", "ci.yml"));
         Assert.Contains("src/Anthill.Desktop/Anthill.Desktop.csproj",
             Read("scripts", "validate.ps1"));
+        // v0.3.8.44: and the RELEASE ships it — the Windows archive carries the desktop app
+        // beside the server binary, so "download Anthill for Windows" means both shapes.
+        Assert.Contains("src/Anthill.Desktop/Anthill.Desktop.csproj",
+            Read(".github", "workflows", "release.yml"));
         // And deliberately not in the solution — if it moves in, this test is the reminder to
         // remove the now-redundant explicit builds rather than run three.
         Assert.DoesNotContain("Anthill.Desktop", Read("Anthill.sln"));
