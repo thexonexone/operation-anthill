@@ -1130,6 +1130,46 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.46: search, pins and export are honest features, not decoration. The search box
+    /// queries the SERVER (titles and transcript content — GET /conversations?q=), the pin is a
+    /// stored fact that survives restart (POST pin/unpin against the record), and export downloads
+    /// what the store holds via the authenticated endpoint. Each pin here is a claim the backend
+    /// can prove.
+    /// </summary>
+    [Fact]
+    public void ChatRail_SearchPinsAndExport_AreBackedByTheStore()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        // The three surfaces exist.
+        Assert.Contains("id=\"chat-search\"", html);
+        Assert.Contains("id=\"chat-export\"", html);
+        Assert.Contains("conv-pin", js);
+
+        // Search goes to the server, not a client-side filter over whatever happens to be loaded —
+        // transcript content lives in the store and only the store can search it.
+        var load = BodyOf(js, "async function loadChat()");
+        Assert.Contains("'?q='+encodeURIComponent(chatSearchQuery)", load);
+        // A search result is a candidate, not a selection: no auto-open while searching.
+        Assert.Contains("!chatSearchQuery) chatOpen(", load);
+
+        // Pinning hits the two explicit endpoints and cannot ALSO open the row it sits on.
+        Assert.Contains("(was?'/unpin':'/pin')", load);
+        Assert.Contains("e.stopPropagation();", load);
+
+        // The debounce means typing is not a request storm; Escape clears back to the full rail.
+        Assert.Contains("chatSearchTimer=setTimeout", js);
+
+        // Export authenticates (fetch with the bearer header, not a bare link) and downloads the
+        // server's file rather than serialising whatever the DOM currently shows.
+        var export = js[js.IndexOf("chat-export", StringComparison.Ordinal)..][..900];
+        Assert.Contains("/export", export);
+        Assert.Contains("'Authorization':'Bearer '+TOKEN", export);
+        Assert.Contains("a.download", export);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces — per-mission
     /// isolated checkouts. "Scheduled" presented the Director's objectives as a general scheduler.

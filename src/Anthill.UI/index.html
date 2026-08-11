@@ -1154,10 +1154,20 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .chat-new{width:100%;}
 .chat-rail-hd{font-size:9px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);}
 .chat-conv{padding:8px 9px;border-radius:6px;cursor:pointer;font-size:11px;color:var(--muted);
-  border:1px solid transparent;line-height:1.4;}
+  border:1px solid transparent;line-height:1.4;position:relative;}
 .chat-conv:hover{background:rgba(255,255,255,.04);}
 .chat-conv.active{background:rgba(34,211,238,.09);border-color:rgba(34,211,238,.3);color:var(--text);}
 .chat-conv .attn{color:var(--amber,#f59e0b);font-size:9px;display:block;margin-top:3px;}
+/* v0.3.8.46: search, pins. The pin is a per-row affordance that appears on hover (always shown
+   when set), and the search box filters SERVER-SIDE over titles and transcript content. */
+.chat-search{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-size:11px;padding:7px 9px;font-family:inherit;}
+.chat-search:focus{border-color:rgba(34,211,238,.45);outline:none;}
+.chat-conv .conv-pin{position:absolute;top:5px;right:5px;background:none;border:none;cursor:pointer;
+  font-size:11px;color:var(--dim);padding:2px 4px;opacity:0;transition:opacity .12s;}
+.chat-conv:hover .conv-pin{opacity:.75;}
+.chat-conv .conv-pin.pinned{opacity:1;color:var(--amber,#f59e0b);}
+.chat-conv .conv-pin:hover{opacity:1;color:var(--text);}
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
 .chat-hd{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);}
 .chat-title{font-weight:700;color:var(--text);font-size:13px;flex:1;min-width:0;
@@ -3080,6 +3090,9 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
           <aside class="chat-rail">
             <button class="btn btn-primary chat-new" id="chat-new">＋ New conversation</button>
+            <label class="sr-only" for="chat-search">Search conversations</label>
+            <input class="chat-search" id="chat-search" type="search"
+                   placeholder="Search title and messages…" autocomplete="off">
             <div class="chat-rail-hd">Conversations</div>
             <div id="chat-conv-list"><div class="hud-state">Loading…</div></div>
           </aside>
@@ -3094,8 +3107,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                      Conversations panel used. Hidden unless the colony is actually working. -->
                 <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
                         title="Stop the colony's current work on this conversation">■ Stop</button>
+                <button class="btn btn-ghost" id="chat-export"
+                        title="Download this conversation as a markdown file">⇩ Export</button>
                 <button class="btn btn-ghost" id="chat-colony-toggle" aria-pressed="false"
-                        title="Watch the colony work behind the conversation">◧ Colony</button>
+                        title="Watch the colony work beside the conversation">◧ Colony</button>
               </div>
             </header>
 

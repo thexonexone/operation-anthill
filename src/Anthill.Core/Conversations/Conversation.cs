@@ -164,6 +164,13 @@ public sealed record Conversation
     public ConversationBudget Budget { get; init; } = ConversationBudget.Default;
 
     public bool Cancelled { get; init; }
+
+    /// <summary>
+    /// v0.3.8.46: pinned conversations sort ahead of everything else in the rail. An operator's
+    /// choice, stored — so it survives restart like the rest of the record.
+    /// </summary>
+    public bool Pinned { get; init; }
+
     public DateTime CreatedAt { get; init; } = AnthillTime.NowUtc();
     public DateTime UpdatedAt { get; init; } = AnthillTime.NowUtc();
 

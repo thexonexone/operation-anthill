@@ -3997,28 +3997,47 @@ const chatTitles = {};
 
 function chatSetState(text){ const el=document.getElementById('chat-state'); if(el) el.textContent=text||''; }
 
+// v0.3.8.46: the rail search — server-side over titles AND transcript content (GET
+// /conversations?q=), so the box finds what the store actually holds, not what happens to be
+// rendered. Kept as module state so the poll's refresh respects an in-progress search.
+let chatSearchQuery='';
+
 async function loadChat(){
   const list=document.getElementById('chat-conv-list'); if(!list) return;
   try{
-    const r=await api('/conversations');
+    const r=await api('/conversations'+(chatSearchQuery?'?q='+encodeURIComponent(chatSearchQuery):''));
     if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not load conversations.')}</div>`; return; }
     const convs=(r.data&&r.data.conversations)||[];
     if(!convs.length){
-      list.innerHTML='<div class="hud-state">Nothing yet — your first message starts one.</div>';
+      list.innerHTML=chatSearchQuery
+        ? `<div class="hud-state">No conversations match “${escapeHtml(chatSearchQuery)}”.</div>`
+        : '<div class="hud-state">Nothing yet — your first message starts one.</div>';
     }else{
       convs.forEach(c=>{ chatTitles[c.id]=c.title||'Conversation'; });
       list.innerHTML=convs.map(c=>`<div class="chat-conv${c.id===chatActiveId?' active':''}" data-id="${escapeHtml(c.id)}">
         ${escapeHtml(c.title||'Conversation')}
+        <button class="conv-pin${c.pinned?' pinned':''}" data-pin-id="${escapeHtml(c.id)}" data-pinned="${c.pinned?'1':'0'}"
+          title="${c.pinned?'Unpin this conversation':'Pin this conversation to the top'}"
+          aria-label="${c.pinned?'Unpin':'Pin'}">${c.pinned?'★':'☆'}</button>
         ${c.cancelled?`<span class="attn" style="color:var(--dim)">Stopped</span>`
           :(c.doing||'').startsWith('running mission')?`<span class="attn">Working…</span>`:''}
       </div>`).join('');
       list.querySelectorAll('.chat-conv').forEach(el=>
         el.addEventListener('click',()=>{ chatComposingNew=false; chatOpen(el.dataset.id); }));
+      // The pin is inside the clickable row; stop propagation so pinning never ALSO opens.
+      list.querySelectorAll('.conv-pin').forEach(el=>
+        el.addEventListener('click', async e=>{
+          e.stopPropagation();
+          const id=el.dataset.pinId, was=el.dataset.pinned==='1';
+          const r2=await api('/conversations/'+encodeURIComponent(id)+(was?'/unpin':'/pin'),'POST');
+          if(r2&&r2.success) loadChat();
+        }));
       // v0.3.8.42 (§13): found live — "New conversation" cleared chatActiveId, then THIS auto-open
       // immediately re-selected the old thread, so the next message went to a conversation the
       // operator had deliberately left (in the found case, a cancelled one, which refused it).
       // The auto-open is for page ENTRY only; an explicit New wins until the first send.
-      if(!chatActiveId && !chatComposingNew) chatOpen(convs[0].id);
+      // A search never auto-opens either — results are candidates, not a selection.
+      if(!chatActiveId && !chatComposingNew && !chatSearchQuery) chatOpen(convs[0].id);
     }
   }catch(e){ pollWarnOnce('loadChat', e); }
 }
@@ -4338,6 +4357,33 @@ document.getElementById('chat-new')?.addEventListener('click', ()=>{
   document.getElementById('chat-input')?.focus();
   loadChat();
 });
+// v0.3.8.46: the rail search box — debounced, and Escape clears it.
+let chatSearchTimer=null;
+document.getElementById('chat-search')?.addEventListener('input', e=>{
+  clearTimeout(chatSearchTimer);
+  chatSearchTimer=setTimeout(()=>{ chatSearchQuery=e.target.value.trim(); loadChat(); }, 250);
+});
+document.getElementById('chat-search')?.addEventListener('keydown', e=>{
+  if(e.key==='Escape'&&e.target.value){ e.stopPropagation(); e.target.value=''; chatSearchQuery=''; loadChat(); }
+});
+
+// v0.3.8.46: export — GET /conversations/{id}/export needs the auth header, so the download goes
+// through fetch + blob rather than a bare link. The filename comes from the server's own header.
+document.getElementById('chat-export')?.addEventListener('click', async ()=>{
+  if(!chatActiveId){ chatSetState('Open a conversation first.'); return; }
+  try{
+    const resp=await fetch(url('/conversations/'+encodeURIComponent(chatActiveId)+'/export'),
+      {headers:{'Authorization':'Bearer '+TOKEN}});
+    if(!resp.ok){ chatSetState('Export failed ('+resp.status+').'); return; }
+    const blob=await resp.blob();
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='conversation-'+chatActiveId+'.md';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ chatSetState('Export failed: '+(e&&e.message||e)); }
+});
+
 document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
 // Secondary action for operators who want the dedicated page. Close first so the canvas is home

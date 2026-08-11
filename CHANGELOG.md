@@ -1,5 +1,27 @@
 # ANTHILL Changelog
 
+## v0.3.8.46 - find it, keep it, take it with you
+
+Three chat quality-of-life features from the maturation directive, each backed by the store
+rather than the DOM.
+
+**Search.** The rail gets a search box that queries the server (`GET /conversations?q=`) over
+titles AND transcript content — because "which conversation was that in" is usually a question
+about something said, not something named. Plain case-insensitive substring match with escaped
+SQL wildcards: exactly what the box claims, nothing more. Results are candidates, not a
+selection — searching never auto-opens a thread. Debounced, and Escape clears it.
+
+**Pins.** A conversation can be pinned to the top of the rail (star on hover). Stored in the
+database like everything else, so it survives restart; pinned sorts ahead of recency, which is
+the whole point of a pin. Two explicit endpoints (`POST /conversations/{id}/pin` and `/unpin`)
+rather than a toggle, so a stale rail can never invert the operator's intent. Pinning does not
+touch `updated_at` — shelving is not activity.
+
+**Export.** `GET /conversations/{id}/export` renders the transcript as markdown from the same
+rows the detail endpoint serves — turns with provider and model, escalation markers, and the
+decision log, refusals included, because an exported audit missing its permissions record is
+half an audit. The console's ⇩ Export button downloads it through the authenticated endpoint.
+
 ## v0.3.8.45 - chat and colony split the page, because the field said so twice
 
 **The layered Chat + Colony view is retired by its own users.** The desktop tester's report —
