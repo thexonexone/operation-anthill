@@ -1291,6 +1291,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* v0.3.8.46: token count, only when the provider reported one. */
 .chat-tok{font-size:9px;color:var(--dim);font-weight:400;margin-left:6px;border:1px solid var(--border);
   border-radius:3px;padding:0 4px;}
+/* v0.3.8.48: the project workspace. */
+.pv-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;}
+.pv-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+  font-size:12px;padding:8px 14px;cursor:pointer;font-family:inherit;}
+.pv-tab.active{color:var(--text);border-bottom-color:rgba(34,211,238,.7);}
+.pv-tab:focus-visible{outline:1px solid rgba(34,211,238,.5);}
+.sch-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.sch-badge{font-size:9px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--dim);}
 /* v0.3.8.48: the project picker rows. */
 .pick-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;
   background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;
@@ -2177,6 +2185,85 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           </div>
         </div>
       </div><!-- /page-readiness -->
+
+      <!-- --------------------------------------------------------------------
+           PAGE: PROJECT WORKSPACE (v0.3.8.48)
+           One project, whole: its conversations, schedules, history, and
+           settings. Deep-linkable at #/projects/{id}; reload-safe.
+      --------------------------------------------------------------------- -->
+      <div class="page page-scroll" id="page-projectview">
+        <div class="page-hdr">
+          <div style="min-width:0;">
+            <h1 id="pv-name" style="overflow:hidden;text-overflow:ellipsis;">Project</h1>
+            <div class="sub" id="pv-sub"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="save-msg text-green" id="pv-msg"></span>
+            <button class="btn btn-primary" id="pv-new-conv">＋ New conversation</button>
+            <button class="btn btn-ghost" id="pv-back">← All projects</button>
+          </div>
+        </div>
+        <div class="pv-tabs" role="tablist">
+          <button class="pv-tab active" data-tab="chat" role="tab">Chat</button>
+          <button class="pv-tab" data-tab="schedules" role="tab">Schedules</button>
+          <button class="pv-tab" data-tab="history" role="tab">History</button>
+          <button class="pv-tab" data-tab="settings" role="tab">Settings</button>
+        </div>
+        <div id="pv-body-chat" class="pv-body"><div class="hud-state">Loading…</div></div>
+        <div id="pv-body-schedules" class="pv-body" hidden>
+          <div class="sub" style="margin:8px 0;">Schedules execute while the Anthill host is running — there is no cloud.</div>
+          <div class="card" style="margin-bottom:10px;"><div style="padding:12px;display:flex;flex-direction:column;gap:7px;">
+            <b style="font-size:12px;">New scheduled task</b>
+            <input class="provider-input" id="sch-name" placeholder="Name" maxlength="120">
+            <textarea class="provider-input" id="sch-prompt" rows="3" placeholder="Instructions — what should each run ask the colony to do?"></textarea>
+            <div style="display:flex;gap:7px;flex-wrap:wrap;">
+              <select class="provider-input" id="sch-trigger">
+                <option value="manual">Manual only</option><option value="once">One time</option>
+                <option value="hourly">Hourly</option><option value="daily" selected>Daily</option>
+                <option value="weekdays">Weekdays</option><option value="weekly">Weekly</option>
+                <option value="cron">Custom cron</option>
+              </select>
+              <input class="provider-input" id="sch-time" placeholder="Local time HH:MM" value="09:00" style="width:120px">
+              <input class="provider-input" id="sch-tz" placeholder="IANA timezone" style="width:180px">
+              <input class="provider-input" id="sch-cron" placeholder="cron: m h dom mon dow" style="width:180px" hidden>
+              <input class="provider-input" id="sch-once" type="datetime-local" style="width:200px" hidden>
+              <select class="provider-input" id="sch-approval">
+                <option value="ask" selected>Manual approval</option>
+                <option value="autoapprove">Automatically approve</option>
+                <option value="bypass">Skip all approvals</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-primary" id="sch-create">Create schedule</button>
+              <span class="save-msg" id="sch-msg"></span>
+            </div>
+          </div></div>
+          <div id="sch-list"><div class="hud-state">Loading…</div></div>
+        </div>
+        <div id="pv-body-history" class="pv-body" hidden><div class="hud-state">Loading…</div></div>
+        <div id="pv-body-settings" class="pv-body" hidden>
+          <div class="card"><div style="padding:12px;display:flex;flex-direction:column;gap:8px;max-width:640px;">
+            <label class="sr-only" for="pv-edit-name">Project name</label>
+            <input class="provider-input" id="pv-edit-name" placeholder="Project name" maxlength="120">
+            <label class="sr-only" for="pv-edit-desc">Purpose</label>
+            <textarea class="provider-input" id="pv-edit-desc" rows="5" placeholder="Purpose — travels with every conversation in this project (markdown)"></textarea>
+            <label class="sr-only" for="pv-edit-path">Working directory</label>
+            <input class="provider-input" id="pv-edit-path" placeholder="Working directory (optional)">
+            <label style="font-size:10px;color:var(--dim);">Default approval for new conversations
+              <select class="provider-input" id="pv-edit-policy" style="width:100%;margin-top:3px;">
+                <option value="ask">Manual approval</option>
+                <option value="autoapprove">Automatically approve</option>
+                <option value="bypass">Skip all approvals</option>
+              </select>
+            </label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="pv-save">Save</button>
+              <button class="btn btn-ghost" id="pv-archive">Archive</button>
+              <span class="save-msg" id="pv-save-msg"></span>
+            </div>
+          </div></div>
+        </div>
+      </div><!-- /page-projectview -->
 
       <!-- --------------------------------------------------------------------
            PAGE: HOMELAB COMMAND CENTER (v1.10.0 inventory → v2.0.0 command center)
@@ -3290,7 +3377,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div style="display:flex;gap:8px;align-items:center;">
               <button class="btn btn-primary" id="project-new-create">Create project</button>
               <button class="btn btn-ghost" id="project-new-cancel">Cancel</button>
-              <span class="save-msg text-green" id="project-new-msg"></span>
+              <span class="save-msg" id="project-new-msg"></span>
             </div>
           </div>
         </div>

@@ -403,7 +403,7 @@ const PAGE_TITLES = {
   activity:'Activity', pheromones:'Memory & Signals', homelab:'Infrastructure', antconfig:'Roles',
   autonomy:'Automation', security:'Security', shell:'Terminal', settings:'Settings', users:'Users',
   agentcli:'Coding Agents', chat:'Chat', projects:'Projects', toolsview:'Tools',
-  readiness:'Readiness'
+  readiness:'Readiness', projectview:'Project'
 };
 const PAGE_ENTER = {};  // registered per-page onEnter callbacks (set later in script)
 PAGE_ENTER['overview']=()=>{
@@ -666,6 +666,14 @@ function buildNav(){
 // Navigate to a route (nav clicks / tabs / router). push=false replaces history (back/forward, boot).
 function go(route,push){
   if(ROUTE_ALIAS[route]) route=ROUTE_ALIAS[route];   // v0.3.8.42 (§7): moved routes stay reachable
+  // v0.3.8.48: the one parameterised route — a project workspace. Deep-linkable, reload-safe.
+  const pm=/^\/projects\/([A-Za-z0-9]+)$/.exec(route);
+  if(pm){
+    projectViewId=pm[1];
+    showPage('projectview',{route:route,noHistory:true});
+    try{ if(push===false) history.replaceState(null,'','#'+route); else history.pushState(null,'','#'+route); }catch{}
+    return;
+  }
   const r=ROUTE_TABLE[route]; if(!r) return;
   if(!canSee(r.vis)) return;
   showPage(r.page,{route:route,hlsub:r.hlsub,view:r.view,stab:r.stab,noHistory:true});
@@ -784,6 +792,7 @@ function router(){
   if(!h) return false;
   if(!h.startsWith('/') && LEGACY_REDIRECT[h]) h=LEGACY_REDIRECT[h];
   if(ROUTE_ALIAS[h]) h=ROUTE_ALIAS[h];   // v0.3.8.42 (§7): moved routes stay reachable
+  if(/^\/projects\/[A-Za-z0-9]+$/.test(h)){ go(h,false); return; }
   const r=ROUTE_TABLE[h];
   if(r && canSee(r.vis)){ go(h,false); return true; }
   return false;
@@ -4713,6 +4722,188 @@ async function loadToolsView(){
 
 PAGE_ENTER['projects']=()=>{ loadProjectCards(); loadProjects(); };
 
+/* v0.3.8.48 — the project workspace. One project, whole: Chat (its conversations), Schedules
+ * (the real subsystem), History (conversations + their missions), Settings (name, purpose, path,
+ * attributed default approval, archive). Deep-linked at #/projects/{id}; reload-safe. */
+var projectViewId=null;
+let pvProject=null;
+PAGE_ENTER['projectview']=()=>{ if(projectViewId) loadProjectView(); };
+
+async function loadProjectView(){
+  const r=await api('/projects/'+encodeURIComponent(projectViewId));
+  if(!(r&&r.success&&r.data)){ setEl('pv-name','Project not found'); setEl('pv-sub',(r&&r.message)||''); return; }
+  pvProject=r.data;
+  setEl('pv-name', pvProject.name||'Untitled project');
+  setEl('pv-sub', [
+    pvProject.path?('📁 '+pvProject.path):null,
+    (pvProject.conversations||[]).length+' conversation(s)',
+    pvProject.schedule_count+' schedule(s)',
+    pvProject.archived?'archived':null,
+  ].filter(Boolean).join(' · '));
+  pvRenderChat(); pvRenderSchedules(); pvRenderHistory(); pvFillSettings();
+}
+
+function pvTab(name){
+  document.querySelectorAll('.pv-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.pv-body').forEach(b=>b.hidden=b.id!=='pv-body-'+name);
+}
+document.querySelectorAll('.pv-tab').forEach(t=>t.addEventListener('click',()=>pvTab(t.dataset.tab)));
+document.getElementById('pv-back')?.addEventListener('click',()=>go('/projects'));
+document.getElementById('pv-new-conv')?.addEventListener('click',()=>{
+  chatPendingProjectId=projectViewId; chatActiveId=null; chatComposingNew=true; go('/chat');
+  document.getElementById('chat-input')?.focus();
+});
+
+function pvRenderChat(){
+  const host=document.getElementById('pv-body-chat'); if(!host) return;
+  const convs=pvProject.conversations||[];
+  host.innerHTML = convs.length
+    ? convs.map(c=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-open="${escapeHtml(c.id)}">
+        <div style="padding:10px 13px;display:flex;align-items:center;gap:9px;">
+          ${c.pinned?'<span title="Pinned">★</span>':''}
+          <b style="color:var(--text);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title||'Conversation')}</b>
+          ${(c.mission_ids||[]).length?`<span class="sch-badge">${c.mission_ids.length} mission(s)</span>`:''}
+          ${c.cancelled?'<span class="sch-badge">stopped</span>':''}
+          <span style="font-size:10px;color:var(--dim)">${escapeHtml(chatTurnTime(c.updated_at)||'')}</span>
+        </div></div>`).join('')
+    : '<div class="hud-state">No conversations yet — start the first one above.</div>';
+  host.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>{
+    chatComposingNew=false; go('/chat'); chatOpen(el.dataset.open);
+  }));
+}
+
+async function pvRenderSchedules(){
+  const host=document.getElementById('sch-list'); if(!host) return;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/schedules');
+  const list=(r&&r.data&&r.data.schedules)||[];
+  host.innerHTML = list.length
+    ? list.map(sc=>`<div class="card" style="margin-bottom:6px;"><div style="padding:10px 13px;">
+        <div class="sch-row">
+          <b style="color:var(--text);font-size:12px;">${escapeHtml(sc.name)}</b>
+          <span class="sch-badge">${escapeHtml(sc.trigger)}${sc.local_time?' '+escapeHtml(sc.local_time):''} ${escapeHtml(sc.timezone||'')}</span>
+          <span class="sch-badge">${escapeHtml(sc.approval_mode==='ask'?'Manual approval':sc.approval_mode==='autoapprove'?'Automatically approve':'Skip all approvals')}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:10px;color:var(--dim)">next: ${sc.next_run_at?escapeHtml(chatTurnTime(sc.next_run_at)):'—'} · last: ${sc.last_run_at?escapeHtml(chatTurnTime(sc.last_run_at)):'never'}</span>
+        </div>
+        <div style="display:flex;gap:7px;margin-top:7px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" data-sch-run="${escapeHtml(sc.id)}">Run now</button>
+          <button class="btn btn-ghost" data-sch-toggle="${escapeHtml(sc.id)}" data-en="${sc.enabled?'1':'0'}">${sc.enabled?'Pause':'Resume'}</button>
+          <button class="btn btn-ghost" data-sch-runs="${escapeHtml(sc.id)}">Past runs</button>
+          <button class="btn btn-ghost" data-sch-del="${escapeHtml(sc.id)}">Delete</button>
+        </div>
+        <div data-sch-runlist="${escapeHtml(sc.id)}" hidden style="margin-top:7px;"></div>
+      </div></div>`).join('')
+    : '<div class="hud-state">No schedules yet.</div>';
+  host.querySelectorAll('[data-sch-run]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true; b.textContent='Running…';
+    const r2=await api('/schedules/'+b.dataset.schRun+'/run','POST',{},180000);
+    setEl('sch-msg',(r2&&r2.message)||'Run failed.');
+    b.disabled=false; b.textContent='Run now'; pvRenderSchedules(); loadProjectView();
+  }));
+  host.querySelectorAll('[data-sch-toggle]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true;
+    await api('/schedules/'+b.dataset.schToggle,'PATCH',{enabled:b.dataset.en!=='1'});
+    pvRenderSchedules();
+  }));
+  host.querySelectorAll('[data-sch-del]').forEach(b=>b.addEventListener('click',async ()=>{
+    b.disabled=true;
+    const r2=await api('/schedules/'+b.dataset.schDel,'DELETE');
+    setEl('sch-msg',(r2&&r2.message)||''); pvRenderSchedules();
+  }));
+  host.querySelectorAll('[data-sch-runs]').forEach(b=>b.addEventListener('click',async ()=>{
+    const box=host.querySelector(`[data-sch-runlist="${b.dataset.schRuns}"]`);
+    if(!box.hidden){ box.hidden=true; return; }
+    const r2=await api('/schedules/'+b.dataset.schRuns+'/runs');
+    const runs=(r2&&r2.data&&r2.data.runs)||[];
+    box.hidden=false;
+    box.innerHTML=runs.length?runs.map(x=>`<div style="font-size:10px;color:var(--muted);padding:2px 0;">
+      ${escapeHtml(chatTurnTime(x.started_at)||'')} · <b>${escapeHtml(x.status)}</b> (${escapeHtml(x.trigger)})
+      ${x.conversation_id?`· <a href="#/chat" data-run-open="${escapeHtml(x.conversation_id)}">open conversation</a>`:''}
+      ${x.summary?` — ${escapeHtml(String(x.summary).slice(0,90))}`:''}</div>`).join('')
+      :'<div class="hud-state">No runs yet.</div>';
+    box.querySelectorAll('[data-run-open]').forEach(a=>a.addEventListener('click',e=>{
+      e.preventDefault(); chatComposingNew=false; go('/chat'); chatOpen(a.dataset.runOpen);
+    }));
+  }));
+}
+
+document.getElementById('sch-trigger')?.addEventListener('change',e=>{
+  const v=e.target.value;
+  document.getElementById('sch-cron').hidden=v!=='cron';
+  document.getElementById('sch-once').hidden=v!=='once';
+  document.getElementById('sch-time').hidden=!(v==='daily'||v==='weekdays'||v==='weekly'||v==='hourly');
+});
+document.getElementById('sch-create')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('sch-create'); btn.disabled=true;
+  const trig=document.getElementById('sch-trigger').value;
+  const onceLocal=document.getElementById('sch-once').value;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId)+'/schedules','POST',{
+    name:document.getElementById('sch-name').value.trim(),
+    prompt:document.getElementById('sch-prompt').value.trim(),
+    trigger:trig,
+    local_time:document.getElementById('sch-time').value.trim()||null,
+    timezone:document.getElementById('sch-tz').value.trim()||Intl.DateTimeFormat().resolvedOptions().timeZone,
+    cron:document.getElementById('sch-cron').value.trim()||null,
+    one_time_at:onceLocal?new Date(onceLocal).toISOString():null,
+    approval_mode:document.getElementById('sch-approval').value,
+  });
+  btn.disabled=false;
+  const msg=document.getElementById('sch-msg');
+  if(msg){ msg.textContent=(r&&r.message)||'Create failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+  if(r&&r.success){ ['sch-name','sch-prompt'].forEach(id=>{const e2=document.getElementById(id); if(e2) e2.value='';}); pvRenderSchedules(); }
+});
+
+async function pvRenderHistory(){
+  const host=document.getElementById('pv-body-history'); if(!host) return;
+  const ids=(pvProject.conversations||[]).flatMap(c=>c.mission_ids||[]);
+  const hist=await api('/missions/json?limit=100');
+  const all=((hist&&hist.data)||[]).filter(m=>ids.includes(String(m.id)));
+  host.innerHTML = (pvProject.conversations||[]).length
+    ? `<div class="sub" style="margin:8px 0;">Everything this project has done — its conversations and the missions they started.</div>`
+      + all.map(m=>`<div class="card" style="margin-bottom:6px;"><div style="padding:9px 13px;font-size:11px;color:var(--muted);">
+          <b style="color:var(--text)">${escapeHtml((m.goal||'').slice(0,90))}</b>
+          <span class="sch-badge" style="margin-left:7px;">${escapeHtml(m.status||'')}</span>
+          ${m.success_score!=null?`<span class="sch-badge">score ${escapeHtml(String(m.success_score))}</span>`:''}
+        </div></div>`).join('')
+      + (all.length?'':'<div class="hud-state">No missions yet.</div>')
+    : '<div class="hud-state">Nothing yet.</div>';
+}
+
+function pvFillSettings(){
+  const g=id=>document.getElementById(id);
+  if(g('pv-edit-name')) g('pv-edit-name').value=pvProject.name||'';
+  if(g('pv-edit-desc')) g('pv-edit-desc').value=pvProject.description_md||'';
+  if(g('pv-edit-path')) g('pv-edit-path').value=pvProject.path||'';
+  if(g('pv-edit-policy')) g('pv-edit-policy').value=pvProject.default_policy||'ask';
+  if(g('pv-archive')) g('pv-archive').textContent=pvProject.archived?'Unarchive':'Archive';
+}
+document.getElementById('pv-save')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-save'); btn.disabled=true;
+  const pol=document.getElementById('pv-edit-policy').value;
+  // Skip all approvals is a real decision — confirmed in words, never a silent dropdown change.
+  if(pol==='bypass' && pvProject.default_policy!=='bypass'
+     && !confirm('Skip all approvals: the colony will act on this project without asking you first. '
+       +'Security gates, workspace boundaries and verification still apply. Continue?')){
+    btn.disabled=false; return;
+  }
+  const r=await api('/projects/'+encodeURIComponent(projectViewId),'PATCH',{
+    name:document.getElementById('pv-edit-name').value.trim(),
+    description_md:document.getElementById('pv-edit-desc').value,
+    path:document.getElementById('pv-edit-path').value.trim(),
+    default_policy:pol,
+  });
+  btn.disabled=false;
+  const msg=document.getElementById('pv-save-msg');
+  if(msg){ msg.textContent=(r&&r.message)||'Save failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+  if(r&&r.success) loadProjectView();
+});
+document.getElementById('pv-archive')?.addEventListener('click',async ()=>{
+  const btn=document.getElementById('pv-archive'); btn.disabled=true;
+  const r=await api('/projects/'+encodeURIComponent(projectViewId),'PATCH',{archived:!pvProject.archived});
+  btn.disabled=false;
+  if(r&&r.success) loadProjectView();
+});
+
 /* v0.3.8.47 — real Projects. One is created with every new conversation; here they are made by
  * hand: a name, a markdown purpose that travels with every message in the project, an optional
  * working-directory path. Claude-projects shaped, ANTHILL rules: the purpose is context the
@@ -4741,6 +4932,8 @@ async function loadProjectCards(){
   </div>`).join('');
   host.querySelectorAll('.project-card').forEach(card=>{
     const pid=card.dataset.project;
+    // v0.3.8.48 (defect 1): the CARD opens the workspace; the buttons stop propagation below.
+    card.addEventListener('click',()=>go('/projects/'+pid));
     card.querySelector('.project-chat')?.addEventListener('click', async e=>{
       e.stopPropagation();
       chatPendingProjectId=pid;   // the first message will create the conversation HERE
@@ -4755,7 +4948,12 @@ async function loadProjectCards(){
     });
   });
 }
-document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+// v0.3.8.48 (defect 6): ONE refresh listener. PAGE_ENTER already loads both halves; the button
+// calls the same pair once — the duplicate registration that double-fetched /workspaces is gone.
+if(!window.__projectsReloadWired){
+  window.__projectsReloadWired=true;
+  document.getElementById('projects-reload')?.addEventListener('click', ()=>{ loadProjectCards(); loadProjects(); });
+}
 document.getElementById('project-new-btn')?.addEventListener('click', ()=>{
   const f=document.getElementById('project-new-form'); if(f){ f.hidden=!f.hidden; if(!f.hidden) document.getElementById('project-new-name')?.focus(); }
 });
@@ -4769,7 +4967,9 @@ document.getElementById('project-new-create')?.addEventListener('click', async (
     name, description_md:document.getElementById('project-new-desc')?.value||'',
     path:document.getElementById('project-new-path')?.value.trim()||null,
   });
-  setEl('project-new-msg', r&&r.success?'Created.':(r&&r.message)||'Create failed.');
+  const nm=document.getElementById('project-new-msg');
+  if(nm){ nm.textContent=r&&r.success?'Created.':(r&&r.message)||'Create failed.';
+          nm.className='save-msg '+(r&&r.success?'text-green':'text-red'); }   // defect 7: red errors
   if(r&&r.success){
     ['project-new-name','project-new-desc','project-new-path'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
     document.getElementById('project-new-form').hidden=true;
