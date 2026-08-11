@@ -74,7 +74,7 @@ public static partial class ApiHost
                 ["description"] = s.Installed
                     ? $"Delegates the turn to {s.Agent.DisplayName} on this machine, signed in as you. "
                     + "Anthill starts it and never holds your credentials."
-                    : $"Not installed. {s.Agent.InstallCommand}",
+                    : $"Not installed. {AgentCliCatalog.InstallHint(s.Agent)}",
                 ["requires_key"] = false,
                 ["default_endpoint"] = null,
                 ["key_help_url"] = s.Agent.DocsUrl,

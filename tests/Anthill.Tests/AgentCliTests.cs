@@ -24,7 +24,10 @@ public class AgentCliTests
             Assert.StartsWith(AgentCliCatalog.IdPrefix, a.Id, StringComparison.Ordinal);
             Assert.False(string.IsNullOrWhiteSpace(a.DisplayName), $"{a.Id} has no display name");
             Assert.False(string.IsNullOrWhiteSpace(a.Vendor), $"{a.Id} does not say whose account it uses");
-            Assert.False(string.IsNullOrWhiteSpace(a.InstallCommand), $"{a.Id} cannot be installed");
+            Assert.False(string.IsNullOrWhiteSpace(a.PackageManager), $"{a.Id} names no package manager");
+            Assert.False(string.IsNullOrWhiteSpace(a.Package), $"{a.Id} names no package");
+            Assert.Contains(a.PackageManager, new[] { "npm", "pip" });
+            Assert.False(string.IsNullOrWhiteSpace(AgentCliCatalog.InstallHint(a)), $"{a.Id} has no install hint");
             Assert.False(string.IsNullOrWhiteSpace(a.AuthCommand), $"{a.Id} cannot be signed in to");
             Assert.False(string.IsNullOrWhiteSpace(a.DocsUrl), $"{a.Id} has nowhere to read about it");
 
@@ -161,7 +164,8 @@ public class AgentCliTests
             Vendor = "test",
             Binary = "anthill-no-such-binary-" + Guid.NewGuid().ToString("N"),
             PromptArgs = new[] { "-p", "{prompt}" },
-            InstallCommand = "npm install -g nothing",
+            PackageManager = "npm",
+            Package = "nothing",
             AuthCommand = "nothing login",
             DocsUrl = "https://example.invalid",
         };
@@ -203,7 +207,8 @@ public class AgentCliTests
             PromptArgs = OperatingSystem.IsWindows()
                 ? new[] { "/c", "timeout /t 30 /nobreak" }
                 : new[] { "-c", "sleep 30" },
-            InstallCommand = "n/a",
+            PackageManager = "npm",
+            Package = "n/a",
             AuthCommand = "n/a",
             DocsUrl = "https://example.invalid",
         };
@@ -216,6 +221,83 @@ public class AgentCliTests
         // neither may hang. The DURATION is the assertion that matters.
         Assert.False(response.Ok);
         Assert.True(took < TimeSpan.FromSeconds(20), $"took {took.TotalSeconds:0}s — the deadline was not applied");
+    }
+
+    /// <summary>
+    /// Agents install into Anthill's OWN directory, never the global prefix. v0.3.8.41.
+    ///
+    /// The first version ran `npm install -g`, whose destination on a normal Linux host is
+    /// /usr/lib/node_modules — root-owned. Every install failed with EACCES for anyone not running
+    /// Anthill as root, and the remedy on offer was "be root", which is not one.
+    ///
+    /// Asserted on the argument vector rather than by installing anything: the property that
+    /// matters is that the destination is under the user's home and is passed explicitly, and that
+    /// is decidable without a network or a package manager.
+    /// </summary>
+    [Fact]
+    public void AgentsInstall_IntoAnthillsOwnDirectory_NotTheGlobalPrefix()
+    {
+        var home = AgentCliInstaller.AgentHome;
+
+        Assert.Contains(".anthill", home, StringComparison.Ordinal);
+        Assert.StartsWith(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), home, StringComparison.Ordinal);
+
+        // Discovery must search where the installer writes, or an agent installs and then reports
+        // as missing — the worst of both outcomes.
+        Assert.Contains(AgentCliInstaller.BinDirectories(),
+            d => d.StartsWith(home, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A bare binary name resolves against Anthill's bin directories before PATH, because agents
+    /// installed outside the global prefix are deliberately NOT on the operator's PATH.
+    /// </summary>
+    [Fact]
+    public void ResolvingABinary_LooksInAnthillsBinDirectories()
+    {
+        // A name nothing has installed falls through unchanged, so the caller still gets the OS's
+        // own PATH resolution and its error, rather than a fabricated path that cannot exist.
+        var unknown = "anthill-no-such-binary-" + Guid.NewGuid().ToString("N");
+        Assert.Equal(unknown, AgentCliDiscovery.Resolve(unknown));
+
+        // Anything already carrying a path separator is returned untouched — a caller that knows
+        // exactly what it wants is never second-guessed.
+        var explicitPath = Path.Combine(Path.GetTempPath(), "some", "tool");
+        Assert.Equal(explicitPath, AgentCliDiscovery.Resolve(explicitPath));
+    }
+
+    /// <summary>
+    /// An installed agent is CAPABLE, and the fitness check must know it. v0.3.8.41.
+    ///
+    /// ModelCapabilityCatalog matches model-name fragments then a provider table, and falls through
+    /// to TextOnly for anything unknown. Routing an ant to Claude Code therefore reported it as
+    /// missing tool calling and structured output — the boot log warning that `ui_cartographer` was
+    /// routed to something "missing tool calling" when the thing was a tool-calling coding agent.
+    ///
+    /// Null for a provider this probe does not serve, which the interface treats as the meaningful
+    /// difference: "I don't know" falls back to the name table, "supports nothing" is believed.
+    /// Answering for Ollama here would override its DISCOVERED capabilities with a guess.
+    /// </summary>
+    [Fact]
+    public void AnAgentIsReportedCapable_AndOtherProvidersAreLeftAlone()
+    {
+        var probe = new AgentCapabilityProbe();
+        var agent = AgentCliCatalog.All.First();
+
+        var caps = probe.For(agent.Id, agent.DisplayName);
+        Assert.NotNull(caps);
+        Assert.True(caps!.ToolCalling);
+        Assert.True(caps.StructuredOutput);
+        Assert.True(caps.Reasoning);
+        // Unknown, not small: it depends on the model configured inside the agent, which Anthill
+        // does not know and must not invent.
+        Assert.Null(caps.ContextWindowTokens);
+
+        Assert.Null(probe.For("ollama", "gemma4:31b"));
+        Assert.Null(probe.For("openai", "gpt-4o"));
+        Assert.Empty(probe.Snapshot("ollama"));
+        Assert.NotEmpty(probe.Snapshot(agent.Id));
     }
 
     [Fact]

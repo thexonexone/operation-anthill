@@ -2612,13 +2612,40 @@ function renderStatusChip(){
   const modeEl=document.getElementById('sc-mode'); modeEl.style.color=modeCol;
   modeEl.querySelector('.sc-mode-icon').innerHTML=providers?CLOUD_ICON:LOCAL_ICON;
   setEl('sc-mode-txt',modeTxt);
-  setEl('sc-model',s.default_model||'—');
+  // v0.3.8.41 — the chip names what the ANTS ARE ROUTED TO, not the Ollama default.
+  //
+  // It read `default_model`, which is the local-model fallback and has nothing to do with per-role
+  // routing. Route every ant to Claude Code and the chip still said gemma4:31b — the console
+  // advertising a model no role was using, while the boot log said otherwise three lines apart.
+  //
+  // Derived from `routes`, which is the same list the popover already renders, so the chip and the
+  // detail beneath it cannot disagree. One distinct pair means one name; several means a count,
+  // because inventing a winner among genuinely mixed routes would be a different lie.
+  const routes = s.routes || [];
+  const pairs = [...new Set(routes.map(r => (r.provider || '') + '|' + (r.model || '')))];
+  if (pairs.length === 1 && routes.length) {
+    setEl('sc-model', routes[0].model || routes[0].provider || '—');
+  } else if (pairs.length > 1) {
+    setEl('sc-model', pairs.length + ' models');
+  } else {
+    setEl('sc-model', s.default_model || '—');
+  }
+  const modelEl = document.getElementById('sc-model');
+  if (modelEl) modelEl.title = routes.length
+    ? routes.map(r => r.role + ' → ' + (r.provider || '?') + ':' + (r.model || '?')).join('\n')
+    : '';
+
   // Online dot reflects the *backend* health, not just the API: red if Ollama is unreachable.
   const dot=document.getElementById('sc-dot');
   // v3.8.33: a reachable host with no usable model is NOT ok. The chip used to go green on
   // reachability alone, which is exactly the state where every mission fails.
-  const modelBad = s.use_ollama && (s.model_resolved===false || s.ollama_model_present===false);
-  const ok = connected && (s.ollama_reachable!==false) && !modelBad;
+  //
+  // v0.3.8.41: and only when a role actually USES Ollama. With every ant routed to a CLI agent,
+  // Ollama's health is no longer this colony's health, and a red chip for an idle local server
+  // would be a false alarm about a component nothing is asking anything of.
+  const usesOllama = routes.some(r => (r.provider || '').toLowerCase() === 'ollama');
+  const modelBad = s.use_ollama && usesOllama && (s.model_resolved===false || s.ollama_model_present===false);
+  const ok = connected && (!usesOllama || s.ollama_reachable!==false) && !modelBad;
   dot.className='sc-dot '+(ok?'ok':'err');
   document.getElementById('status-chip').title = ok?'Online — click for details'
     :(s.ollama_reachable===false?'Ollama unreachable — click for details'
@@ -4039,6 +4066,16 @@ async function loadAgentCli(force){
     if(!r||!r.success){ list.innerHTML=`<div class="hud-state err">${escapeHtml((r&&r.message)||'Could not read the agent list.')}</div>`; return; }
     const d=r.data||{}, agents=d.agents||[];
     if(!agents.length){ list.innerHTML='<div class="hud-state">No agents are catalogued in this build.</div>'; return; }
+
+    // v0.3.8.41: where Anthill puts them. Agents install into Anthill's own directory rather than
+    // the system-wide npm prefix, which is what makes installing possible without root — and it
+    // also means they are NOT on the operator's PATH, so saying where they went avoids the
+    // reasonable conclusion that nothing happened.
+    const whereEl=document.getElementById('agentcli-where');
+    if(whereEl && d.install_dir){
+      whereEl.textContent='Installed into '+d.install_dir+' — no administrator rights needed, and removing that folder uninstalls them.';
+      whereEl.style.display='';
+    }
 
     list.innerHTML = agents.map(a=>{
       const installed=!!a.installed;

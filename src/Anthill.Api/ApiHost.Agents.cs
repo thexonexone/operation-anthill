@@ -54,7 +54,9 @@ public static partial class ApiHost
                     ["installed"] = s.Installed,
                     ["version"] = s.Version,
                     ["unavailable_reason"] = s.Unavailable,
-                    ["install_command"] = s.Agent.InstallCommand,
+                    ["install_command"] = AgentCliCatalog.InstallHint(s.Agent),
+                    // v0.3.8.41: where Anthill puts it, so an operator can find or remove it.
+                    ["install_dir"] = AgentCliInstaller.AgentHome,
                     // Printed, never run. A sign-in is an interactive act belonging to the person
                     // whose account it is, and Anthill holds no credential of theirs to use.
                     ["auth_command"] = s.Agent.AuthCommand,
@@ -93,7 +95,7 @@ public static partial class ApiHost
             // that wedges the host, which is exactly the case anyone will want the record for.
             Queen.Memory.LogEvent(AnthillRuntime.SystemApiMissionId, "agent_install_started",
                 $"Operator {who} started installing {agent.DisplayName}.", antName: "operator",
-                metadata: new() { ["operator"] = who, ["agent"] = agent.Id, ["command"] = agent.InstallCommand });
+                metadata: new() { ["operator"] = who, ["agent"] = agent.Id, ["command"] = AgentCliCatalog.InstallHint(agent) });
 
             var result = AgentCliInstaller.Install(agent);
 

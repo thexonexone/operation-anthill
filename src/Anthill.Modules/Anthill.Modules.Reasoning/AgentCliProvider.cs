@@ -56,7 +56,8 @@ public sealed class AgentCliProvider : IReasoningProvider
 
         if (!started)
             return Fail(ModelCallOutcome.NotAvailable,
-                $"{_agent.DisplayName} is not installed. Install it with: {_agent.InstallCommand}");
+                $"{_agent.DisplayName} is not installed. Install it from the Agents page, or with: "
+                + AgentCliCatalog.InstallHint(_agent));
 
         if (exit != 0)
         {
