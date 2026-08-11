@@ -114,6 +114,75 @@ public class DockerActionRunnerTests
         Assert.Contains("execution is disabled", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ---- compose (v0.3.8.40) --------------------------------------------------------------------
+
+    private static ActionProposal ComposeProposal(string type = "compose_up", string dir = "/srv/stack") => new()
+    {
+        ActionType = type,
+        TargetKind = "compose_project",
+        TargetId = dir,
+        Title = "test",
+    };
+
+    [Theory]
+    [InlineData("compose_up")]
+    [InlineData("compose_down")]
+    public void ItClaims_ComposeActions_OnAComposeProject(string type) =>
+        Assert.True(Runner().CanRun(ComposeProposal(type)));
+
+    /// <summary>
+    /// A compose action aimed at a CONTAINER is not this runner's, and neither is a container
+    /// action aimed at a project. The target kind carries which shape the payload is, and claiming
+    /// a proposal whose shape cannot be acted on is how a runner swallows work it then fails.
+    /// </summary>
+    [Fact]
+    public void ItDoesNotClaim_ComposeAgainstTheWrongTargetKind()
+    {
+        var p = ComposeProposal();
+        p.TargetKind = "container";
+
+        Assert.False(Runner().CanRun(p));
+    }
+
+    /// <summary>
+    /// The compose target is a DIRECTORY, so the container-name rule would reject every valid one —
+    /// but the same underlying concerns apply in a different shape. A leading '-' is read by docker
+    /// as an option; `..` lets the path that runs differ from the path that was approved; a relative
+    /// path means something different depending on where Anthill was started.
+    /// </summary>
+    [Theory]
+    [InlineData("-rf")]
+    [InlineData("")]
+    [InlineData("/srv/../etc")]
+    [InlineData("relative/path")]
+    public async Task AnUnsafeComposeDirectory_IsRefused(string dir)
+    {
+        var result = await Runner(server: true, execute: true).ExecuteAsync(ComposeProposal(dir: dir));
+
+        Assert.False(result.Ok);
+        Assert.False(result.Message.Contains("succeeded", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AnAbsoluteComposeDirectory_PassesTheTargetGuard()
+    {
+        // Execution off, so it stops at the EXECUTE gate — proving the path was accepted past the
+        // target guard rather than merely that something refused.
+        var result = await Runner(server: true, execute: false).ExecuteAsync(ComposeProposal(dir: "/srv/stack"));
+
+        Assert.False(result.Ok);
+        Assert.Contains("execution is disabled", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ComposeOnADesktop_IsRefusedLikeEverythingElse()
+    {
+        var result = await Runner(server: false, execute: true).ExecuteAsync(ComposeProposal());
+
+        Assert.False(result.Ok);
+        Assert.Contains("desktop", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Gate 2. Execution off is the default, and it must stop EXECUTE without stopping DRY RUN —
     /// seeing what would happen is precisely how an operator decides whether to enable it.

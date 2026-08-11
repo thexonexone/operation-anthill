@@ -39,7 +39,18 @@ public sealed class DockerActionRunner : IHomelabActionRunner
     /// starting one that was deliberately stopped is a judgment call, which is why it needs the
     /// same approval as the rest rather than a lower bar.
     /// </summary>
-    private static readonly string[] Supported = { "start_container", "stop_container", "restart_container" };
+    private static readonly string[] Supported =
+    {
+        "start_container", "stop_container", "restart_container",
+        // v0.3.8.40: compose, because down and up undo each other from the same file — the
+        // reversibility container CREATION does not have. `docker run` is still absent for exactly
+        // that reason, and `delete_container` remains structurally Forbidden in ActionCatalog.
+        "compose_up", "compose_down",
+    };
+
+    /// <summary>Compose acts on a project (a directory of services), not a single container.</summary>
+    private static bool IsCompose(string? actionType) =>
+        (actionType ?? "").Trim().ToLowerInvariant() is "compose_up" or "compose_down";
 
     /// <summary>
     /// Docker's own name rule, minus the leading-character latitude. A name must start
@@ -83,7 +94,11 @@ public sealed class DockerActionRunner : IHomelabActionRunner
     public bool CanRun(ActionProposal proposal) =>
         proposal is not null
         && Supported.Contains((proposal.ActionType ?? "").Trim().ToLowerInvariant())
-        && string.Equals((proposal.TargetKind ?? "").Trim(), "container", StringComparison.OrdinalIgnoreCase);
+        // Compose targets a project, a container action targets a container. Matching the target
+        // kind keeps this runner from claiming a proposal whose shape it cannot actually act on.
+        && string.Equals((proposal.TargetKind ?? "").Trim(),
+                         IsCompose(proposal.ActionType) ? "compose_project" : "container",
+                         StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Says exactly what Execute would do, with the real command and the container's real state,
@@ -100,21 +115,43 @@ public sealed class DockerActionRunner : IHomelabActionRunner
         var verb = Verb(proposal.ActionType);
         var target = proposal.TargetId.Trim();
 
-        var (found, state, why) = Inspect(target, ct);
-        if (!found)
-            return Task.FromResult(new ActionRunResult(false,
-                $"No container named '{target}' on this host{(string.IsNullOrWhiteSpace(why) ? "." : $": {why}")}"));
-
-        var noop = (verb, state) switch
+        string what;
+        if (IsCompose(proposal.ActionType))
         {
-            ("start", "running") => " It is already running, so this would do nothing.",
-            ("stop", "exited")   => " It is already stopped, so this would do nothing.",
-            _ => "",
-        };
+            // `compose config --services` parses the file and lists what is in it. A read, and the
+            // only honest way to say what "up" would actually start: the operator approved a
+            // directory, not a list of services, and those are not the same thing until something
+            // reads the file.
+            var (cok, cout, cerr, cexit) = Run(
+                new[] { "compose", "--project-directory", target, "config", "--services" }, ct);
+            if (!cok) return Task.FromResult(new ActionRunResult(false, "docker is not installed or not on PATH."));
+            if (cexit != 0)
+                return Task.FromResult(new ActionRunResult(false,
+                    $"No usable compose project at '{target}': {Tail(cerr, cout)}"));
+
+            var services = cout.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+            what = $"Would run: docker compose --project-directory {target} {verb}{(verb == "up" ? " -d" : "")}\n"
+                 + $"{services.Count} service(s) in this project: {string.Join(", ", services)}.\n";
+        }
+        else
+        {
+            var (found, state, why) = Inspect(target, ct);
+            if (!found)
+                return Task.FromResult(new ActionRunResult(false,
+                    $"No container named '{target}' on this host{(string.IsNullOrWhiteSpace(why) ? "." : $": {why}")}"));
+
+            var noop = (verb, state) switch
+            {
+                ("start", "running") => " It is already running, so this would do nothing.",
+                ("stop", "exited")   => " It is already stopped, so this would do nothing.",
+                _ => "",
+            };
+            what = $"Would run: docker {verb} {target}\n"
+                 + $"Container '{target}' is currently {state}.{noop}\n";
+        }
 
         return Task.FromResult(new ActionRunResult(true,
-            $"Would run: docker {verb} {target}\n"
-            + $"Container '{target}' is currently {state}.{noop}\n"
+            what
             + (_executeEnabled()
                 ? "Execution is enabled; this will run once approved."
                 : "Execution is DISABLED (docker_execute_enabled = false), so approving this will not run it.")));
@@ -128,7 +165,7 @@ public sealed class DockerActionRunner : IHomelabActionRunner
         var verb = Verb(proposal.ActionType);
         var target = proposal.TargetId.Trim();
 
-        var (ok, stdout, stderr, exit) = Run(new[] { verb, target }, ct);
+        var (ok, stdout, stderr, exit) = Run(ArgsFor(verb, target), ct);
         if (!ok) return Task.FromResult(new ActionRunResult(false, "docker is not installed or not on PATH."));
 
         return Task.FromResult(exit == 0
@@ -147,6 +184,27 @@ public sealed class DockerActionRunner : IHomelabActionRunner
     public Task<ActionRunResult> VerifyAsync(ActionProposal proposal, CancellationToken ct = default)
     {
         var target = (proposal.TargetId ?? "").Trim();
+
+        if (IsCompose(proposal.ActionType))
+        {
+            // Safety rule 10 again: a zero exit from compose means the command was accepted. Whether
+            // the stack is actually up is a different question, and this is the one that asks it.
+            var (rok, rout, rerr, rexit) = Run(
+                new[] { "compose", "--project-directory", target, "ps", "--status", "running", "-q" }, ct);
+            if (!rok) return Task.FromResult(new ActionRunResult(false, "docker is not installed or not on PATH."));
+            if (rexit != 0) return Task.FromResult(new ActionRunResult(false, $"Could not verify '{target}': {Tail(rerr, rout)}"));
+
+            var running = rout.Split('\n').Count(x => x.Trim().Length > 0);
+            var wantRunning = Verb(proposal.ActionType) == "up";
+            return Task.FromResult(wantRunning
+                ? (running > 0
+                    ? new ActionRunResult(true, $"Verified: {running} service(s) running in '{target}'.")
+                    : new ActionRunResult(false, $"Not verified: nothing is running in '{target}'."))
+                : (running == 0
+                    ? new ActionRunResult(true, $"Verified: nothing is running in '{target}'.")
+                    : new ActionRunResult(false, $"Not verified: {running} service(s) still running in '{target}'.")));
+        }
+
         var (found, state, why) = Inspect(target, ct);
 
         if (!found)
@@ -174,9 +232,26 @@ public sealed class DockerActionRunner : IHomelabActionRunner
             return $"'{type}' is not a container action this runner performs.";
 
         var target = (proposal.TargetId ?? "").Trim();
-        if (!NamePattern.IsMatch(target))
+        if (IsCompose(type))
+        {
+            // A compose target is a project DIRECTORY, so the container-name pattern would reject
+            // every valid one. Different shape, different rule — but the same underlying concern:
+            // a value starting with '-' is read by docker as an option rather than a path, and
+            // `..` lets an approved target resolve somewhere the approver never saw.
+            if (target.Length == 0 || target.StartsWith('-'))
+                return $"'{target}' is not a valid compose project directory.";
+            if (target.Contains("..", StringComparison.Ordinal))
+                return "A compose project directory may not contain '..' — the approved path must be "
+                     + "the path that runs.";
+            if (!System.IO.Path.IsPathRooted(target))
+                return $"'{target}' must be an absolute path, so the action means the same thing "
+                     + "wherever Anthill is started from.";
+        }
+        else if (!NamePattern.IsMatch(target))
+        {
             return $"'{target}' is not a valid container name. Names start with a letter or digit and "
                  + "contain only letters, digits, dots, dashes and underscores.";
+        }
 
         if (forExecution && !_executeEnabled())
             return "Container execution is disabled. Set docker_execute_enabled to true in configuration "
@@ -189,7 +264,24 @@ public sealed class DockerActionRunner : IHomelabActionRunner
     {
         "start_container" => "start",
         "stop_container" => "stop",
+        "compose_up" => "up",
+        "compose_down" => "down",
         _ => "restart",
+    };
+
+    /// <summary>
+    /// The argv for one action. Compose runs against an explicit project directory rather than the
+    /// process's working directory: `docker compose up` picks up whatever compose file happens to be
+    /// where Anthill was started, which is a different stack from the one the operator approved.
+    ///
+    /// `-d` on up, because a compose that holds the terminal would hit the command timeout and be
+    /// killed halfway through starting a stack.
+    /// </summary>
+    private static string[] ArgsFor(string verb, string target) => verb switch
+    {
+        "up"   => new[] { "compose", "--project-directory", target, "up", "-d" },
+        "down" => new[] { "compose", "--project-directory", target, "down" },
+        _      => new[] { verb, target },
     };
 
     /// <summary>Reads the container's state. A read — never used to change anything.</summary>

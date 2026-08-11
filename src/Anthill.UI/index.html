@@ -1210,6 +1210,13 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 @media (max-width:1100px){ .chat-side{width:320px;} }
 @media (max-width:900px){ .chat-rail{display:none;} .chat-side{display:none;} }
 
+/* v0.3.8.40: the escalation gate in the thread. Amber, not red — the colony is asking, not failing. */
+.chat-approve{align-self:stretch;max-width:min(760px,92%);border:1px solid rgba(245,158,11,.35);
+  background:rgba(245,158,11,.07);border-radius:9px;padding:12px 14px;}
+.chat-approve-hd{font-size:12px;font-weight:700;color:var(--amber,#f59e0b);margin-bottom:5px;}
+.chat-approve-what{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:10px;}
+.chat-approve-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
 /* v3.8.39: installable coding agents */
 .agentcli-card{padding:12px 14px;margin-bottom:10px;}
 .agentcli-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
@@ -3093,6 +3100,33 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
             <div id="chat-colony-mount" class="chat-colony-mount"></div>
           </aside>
         </div>
+      </div>
+
+      <!-- v0.3.8.40: Projects — mission workspaces, promoted from a hidden dashboard widget to a
+           destination. A "project" is the isolated checkout a mission works in; the colony's rule is
+           that the active tree is never an agent scratchpad, so this is where the work actually
+           happens and an operator should be able to find it without customising a dashboard. -->
+      <div class="page page-scroll" id="page-projects">
+        <div class="page-hdr">
+          <div>
+            <h1>Projects</h1>
+            <div class="sub">Isolated workspaces the colony does its work in. Nothing here touches your live files until you approve a change.</div>
+          </div>
+          <button class="btn btn-ghost" id="projects-reload">↺ Refresh</button>
+        </div>
+        <div id="projects-list"><div class="hud-state">Loading…</div></div>
+      </div>
+
+      <!-- v0.3.8.40: Tools — what the colony can actually do, and what it is routed to. -->
+      <div class="page page-scroll" id="page-toolsview">
+        <div class="page-hdr">
+          <div>
+            <h1>Tools</h1>
+            <div class="sub">What the colony is able to do, and whether each ant is routed to a model that can do it.</div>
+          </div>
+          <button class="btn btn-ghost" id="toolsview-reload">↺ Refresh</button>
+        </div>
+        <div id="toolsview-body"><div class="hud-state">Loading…</div></div>
       </div>
 
       <!-- v3.8.39: installable CLI agents. The colony can delegate a turn to Claude Code, Codex,
