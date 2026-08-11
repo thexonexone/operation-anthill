@@ -1223,7 +1223,7 @@ public class UiShellTests
         var html = Ui("index.html");
         var js = Ui("app.js");
 
-        Assert.Contains("id="chat-policy"", html);
+        Assert.Contains("id=\"chat-policy\"", html);
         Assert.Contains(">Manual approval<", html);
         Assert.Contains(">Automatically approve<", html);
         Assert.Contains(">Skip all approvals<", html);
