@@ -62,4 +62,15 @@ public sealed class AgentCapabilityProbe : IModelCapabilityProbe
             ? new Dictionary<string, ModelCapabilities>()
             : new Dictionary<string, ModelCapabilities> { [agent.DisplayName] = AgentCapabilities };
     }
+
+    /// <summary>
+    /// Nothing to warm, and that is a property rather than an omission.
+    ///
+    /// This probe answers from the catalogue, so it is already correct on the first call. The
+    /// interface documents why Warm exists at all: v3.8.2's defect was an ORDERING one — the fitness
+    /// report ran before Ollama's warm completed and judged every route against the fallback table.
+    /// A probe with no cache cannot lose that race, so agents are reported correctly even by
+    /// something that asks during startup.
+    /// </summary>
+    public void Warm() { }
 }
