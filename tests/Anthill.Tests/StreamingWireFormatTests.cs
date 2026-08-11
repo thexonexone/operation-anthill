@@ -80,6 +80,26 @@ public class StreamingWireFormatTests
         Assert.DoesNotContain("for (var attempt", body[..body.IndexOf("private static ModelResponse Fail", StringComparison.Ordinal)]);
     }
 
+    /// <summary>
+    /// v0.3.8.47, found live after THREE releases of streaming work: the router hands out
+    /// ReasoningProviderAdapter, and the adapter did not carry IStreamingReasoningProvider — so
+    /// the Queen's capability test was false for every provider and not one delta ever flowed.
+    /// The wrapper must forward the capability, and this pin is what keeps the next wrapper from
+    /// silently hiding it again.
+    /// </summary>
+    [Fact]
+    public void TheRoutersAdapter_ForwardsTheStreamingCapability()
+    {
+        var src = File.ReadAllText(Path.Combine(SourceText.RepoRoot(),
+            "src", "Anthill.Core", "Models", "ReasoningProviders.cs"));
+
+        Assert.Contains("class ReasoningProviderAdapter : IModelClient, IStreamingReasoningProvider", src);
+        Assert.Contains("_inner is IStreamingReasoningProvider streaming", src);
+        Assert.Contains("streaming.SendStreaming(request, onDelta, retries)", src);
+        // The fallback is the whole answer through Send — never a fake trickle.
+        Assert.Contains(": _inner.Send(request, retries);", src);
+    }
+
     // ---- v0.3.8.47: the agent NDJSON stream (Claude Code's stream-json) --------------------------
 
     /// <summary>An assistant event's text blocks become the delta; nothing else leaks through.</summary>
