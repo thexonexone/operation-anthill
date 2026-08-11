@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using Anthill.Core.Configuration;
+using Anthill.Modules.Homelab.Approvals;
 
-namespace Anthill.Modules.Homelab;
+namespace Anthill.Modules.Homelab.Actions;
 
 /// <summary>
 /// Docker container control, through the approval pipeline rather than around it. v0.3.8.40.
@@ -51,6 +51,33 @@ public sealed class DockerActionRunner : IHomelabActionRunner
 
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(60);
 
+    private readonly Func<bool> _isServer;
+    private readonly Func<string> _deploymentDescription;
+    private readonly Func<bool> _executeEnabled;
+
+    /// <summary>
+    /// Gates are SUPPLIED, not read. This module references Anthill.SDK and nothing else — the
+    /// homelab left the core in v3.8.7 and ModuleBoundaryTests enforces it by assembly reference —
+    /// so reaching for AnthillRuntime here does not compile, and should not: a module that reads the
+    /// core's configuration is the coupling that refactor removed.
+    ///
+    /// Read through delegates rather than captured as booleans because both are live settings. A
+    /// value captured at construction would keep answering with whatever was true when the API
+    /// booted, and an operator who turned execution off would find it still on.
+    /// </summary>
+    /// <param name="isServerDeployment">True when this colony is a server/container host.</param>
+    /// <param name="deploymentDescription">How to describe the current mode in a refusal.</param>
+    /// <param name="executeEnabled">True when approved container actions may actually run.</param>
+    public DockerActionRunner(
+        Func<bool> isServerDeployment,
+        Func<string> deploymentDescription,
+        Func<bool> executeEnabled)
+    {
+        _isServer = isServerDeployment;
+        _deploymentDescription = deploymentDescription;
+        _executeEnabled = executeEnabled;
+    }
+
     public string Name => "docker";
 
     public bool CanRun(ActionProposal proposal) =>
@@ -88,7 +115,7 @@ public sealed class DockerActionRunner : IHomelabActionRunner
         return Task.FromResult(new ActionRunResult(true,
             $"Would run: docker {verb} {target}\n"
             + $"Container '{target}' is currently {state}.{noop}\n"
-            + (AnthillRuntime.DockerExecuteEnabled
+            + (_executeEnabled()
                 ? "Execution is enabled; this will run once approved."
                 : "Execution is DISABLED (docker_execute_enabled = false), so approving this will not run it.")));
     }
@@ -136,12 +163,11 @@ public sealed class DockerActionRunner : IHomelabActionRunner
     /// Every reason this runner will not act, in one place, so dry run and execute can never
     /// disagree about what is permitted. Ordered cheapest first; the deployment gate needs no I/O.
     /// </summary>
-    private static string? Refuse(ActionProposal proposal, bool forExecution)
+    private string? Refuse(ActionProposal proposal, bool forExecution)
     {
-        if (AnthillRuntime.Deployment != DeploymentMode.Server)
+        if (!_isServer())
             return "Container control is only available when Anthill runs as a server or container host. "
-                 + $"This colony is running as {AnthillRuntime.Deployment.ToString().ToLowerInvariant()} "
-                 + $"({AnthillRuntime.DeploymentReason})";
+                 + $"This colony is running as {_deploymentDescription()}";
 
         var type = (proposal.ActionType ?? "").Trim().ToLowerInvariant();
         if (!Supported.Contains(type))
@@ -152,7 +178,7 @@ public sealed class DockerActionRunner : IHomelabActionRunner
             return $"'{target}' is not a valid container name. Names start with a letter or digit and "
                  + "contain only letters, digits, dots, dashes and underscores.";
 
-        if (forExecution && !AnthillRuntime.DockerExecuteEnabled)
+        if (forExecution && !_executeEnabled())
             return "Container execution is disabled. Set docker_execute_enabled to true in configuration "
                  + "to allow approved container actions to run. Dry run is available meanwhile.";
 

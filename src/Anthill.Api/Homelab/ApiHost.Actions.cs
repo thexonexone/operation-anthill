@@ -51,7 +51,14 @@ public static partial class ApiHost
         //
         // Before the mock runner, which claims every catalogued action and would otherwise shadow
         // this one; the ordering lesson v2.3.1.1 records about Proxmox applies identically here.
-        runners.Add(new DockerActionRunner());
+        // Gates are read through delegates, not captured: both are live settings, and a value
+        // sampled at boot would keep answering with whatever was true then — an operator who turned
+        // execution off would find it still on.
+        runners.Add(new DockerActionRunner(
+            isServerDeployment: () => AnthillRuntime.Deployment == DeploymentMode.Server,
+            deploymentDescription: () =>
+                $"{AnthillRuntime.Deployment.ToString().ToLowerInvariant()} ({AnthillRuntime.DeploymentReason})",
+            executeEnabled: () => AnthillRuntime.DockerExecuteEnabled));
         // v2.3.1.1: the mock runner is registered LAST. It claims every catalog action, so with the
         // dev mock gate on it previously shadowed the real Proxmox runner (first CanRun match wins)
         // and reported real actions as executed without touching anything.
