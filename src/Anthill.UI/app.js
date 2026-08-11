@@ -4188,23 +4188,30 @@ function chatToggleColony(open){
  * (v3.7.0); the topology itself renders the colony's real current activity from /graph. This
  * line says which of three states is true rather than pretending the map is always "the
  * conversation's mission": linked-and-running (the activity IS this mission), linked-and-settled,
- * or not linked (the map shows the colony as it is — including a legitimate idle). */
+ * or not linked (the map shows the colony as it is — including a legitimate idle).
+ *
+ * Found by the live walkthrough: this read /jobs, and conversation-ESCALATED missions run through
+ * the Queen directly — the jobs registry only holds POST /missions submissions — so the note said
+ * "not in the recent runs list" about exactly the missions chat creates. The conversation's own
+ * state is the first authority, and mission HISTORY is the settled record. */
 async function chatColonyMissionNote(){
   const el=document.getElementById('chat-colony-mission'); if(el===null) return;
   if(!chatActiveId){ el.textContent='No mission linked — the map shows the colony as it is.'; return; }
   try{
     const r=await api('/conversations/'+encodeURIComponent(chatActiveId));
-    const ids=(r&&r.success&&r.data&&r.data.mission_ids)||[];
+    const d=(r&&r.success&&r.data)||{};
+    const ids=d.mission_ids||[];
     if(!ids.length){ el.textContent='No mission linked — the map shows the colony as it is.'; return; }
     const mid=String(ids[ids.length-1]);
-    const jr=await api('/jobs');
-    const job=(jr&&jr.success?(jr.data||[]):[]).find(j=>String(j.mission_id||'')===mid);
-    if(job&&(job.status==='running'||job.status==='queued'))
-      el.textContent='This conversation’s mission is '+(job.status==='running'?'running — the activity below is it.':'queued.');
-    else if(job)
-      el.textContent='This conversation’s last mission '+(JOB_STATUS_LABEL[job.status]||job.status)+'.';
-    else
-      el.textContent='Linked mission '+mid.substring(0,8)+'… — not in the recent runs list.';
+    if((d.doing||'').startsWith('running mission')){
+      el.textContent='This conversation’s mission is running — the activity below is it.';
+      return;
+    }
+    const hist=(await api('/missions/json?limit=40'));
+    const m=((hist&&hist.success&&hist.data)||[]).find(x=>String(x.id)===mid);
+    el.textContent = m
+      ? `This conversation’s last mission: ${m.status}${m.success_score!=null?' · score '+m.success_score:''}.`
+      : 'Linked mission '+mid.substring(0,8)+'… — not in recent history.';
   }catch{ el.textContent=''; }
 }
 
