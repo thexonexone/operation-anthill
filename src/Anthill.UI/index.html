@@ -1299,6 +1299,17 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 .pv-tab:focus-visible{outline:1px solid rgba(34,211,238,.5);}
 .sch-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .sch-badge{font-size:9px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--dim);}
+/* v0.3.8.48: the approval selector and the inline change cards. */
+.chat-policy{font-size:10px;padding:4px 7px;width:auto;background:var(--bg);}
+.patch-card{align-self:stretch;max-width:min(760px,92%);border:1px solid var(--border);
+  border-radius:9px;padding:11px 13px;background:rgba(2,6,23,.45);}
+.patch-card.applied{border-color:rgba(52,211,153,.35);}
+.patch-card.rejected{opacity:.65;}
+.patch-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text);}
+.patch-path{font-family:monospace;font-size:10px;color:var(--cyan,#22d3ee);word-break:break-all;}
+.patch-diff{margin-top:7px;max-height:260px;overflow:auto;font-size:10px;background:var(--bg);
+  border:1px solid var(--border);border-radius:6px;padding:8px;white-space:pre;}
+.patch-actions{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap;}
 /* v0.3.8.48: the project picker rows. */
 .pick-row{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;
   background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;
@@ -3306,6 +3317,14 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
                 <!-- v0.3.8.42 (§3): Chat is the one mission entry, so the stop affordance lives
                      here too — POST /conversations/{id}/cancel, the same durable path the old
                      Conversations panel used. Hidden unless the colony is actually working. -->
+                <!-- v0.3.8.48: the approval gate, on the conversation itself. Three modes, the
+                     same three the backend has always had; changing one is attributed. -->
+                <label class="sr-only" for="chat-policy">Approval mode</label>
+                <select class="provider-input chat-policy" id="chat-policy" title="How this conversation handles side effects">
+                  <option value="ask">Manual approval</option>
+                  <option value="autoapprove">Automatically approve</option>
+                  <option value="bypass">Skip all approvals</option>
+                </select>
                 <button class="btn btn-ghost chat-stop" id="chat-stop" hidden
                         title="Stop the colony's current work on this conversation">■ Stop</button>
                 <button class="btn btn-ghost" id="chat-export"

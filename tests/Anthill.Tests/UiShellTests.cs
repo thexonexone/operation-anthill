@@ -1211,6 +1211,39 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.48: approvals live ON the conversation. The selector carries the three exact
+    /// user-facing labels mapped to the three policies the backend has always had; Skip-all
+    /// requires a spoken confirmation and a refusal snaps the selector back; and proposed
+    /// changes render as cards IN the thread with approve-and-apply running both audited
+    /// transitions in sequence. The separate Changes page is no longer the only door.
+    /// </summary>
+    [Fact]
+    public void Approvals_LiveOnTheConversation()
+    {
+        var html = Ui("index.html");
+        var js = Ui("app.js");
+
+        Assert.Contains("id="chat-policy"", html);
+        Assert.Contains(">Manual approval<", html);
+        Assert.Contains(">Automatically approve<", html);
+        Assert.Contains(">Skip all approvals<", html);
+
+        // Bypass is confirmed in words, and the words say the honest thing.
+        Assert.Contains("this skips prompts, not security", js);
+        Assert.Contains("sel.value=was; return;", js);
+
+        // The policy endpoint is called attributed; the selector reflects the EFFECTIVE policy.
+        Assert.Contains("'/policy','POST'", js);
+
+        // Inline change cards: in the thread, both transitions, no navigation.
+        Assert.Contains("chatRenderPatches", js);
+        Assert.Contains("data-p-approve", js);
+        Assert.Contains("'/patches/'+encodeURIComponent(pid)+'/approve'", js);
+        Assert.Contains("'/apply/'+encodeURIComponent(approvalId)", js);
+        Assert.Contains("'/revert/'+encodeURIComponent(pid)", js);
+    }
+
+    /// <summary>
     /// v0.3.8.42 (§5 of docs/UI-CONTRACT-AUDIT.md): surfaces claim only what the backend provides.
     /// "Projects" implied project management over what is really GET /workspaces, so the label was
     /// corrected to "Mission Workspaces". v0.3.8.47 BUILT the project concept — a projects table,

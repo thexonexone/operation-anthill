@@ -4259,6 +4259,11 @@ async function chatOpen(id){
     }
 
     setEl('chat-title', chatTitles[id] || d.title || 'Conversation');
+    // v0.3.8.48: the selector shows the conversation's EFFECTIVE policy, and says who set it.
+    const polSel=document.getElementById('chat-policy');
+    if(polSel){ polSel.value=d.policy||'ask'; polSel.dataset.current=d.policy||'ask'; }
+    // Inline change cards: this conversation's proposed patches, reviewed where the work happened.
+    chatRenderPatches(d, thread);
     chatOpenAfterRender(d);
   }catch(e){ pollWarnOnce('chatOpen', e); }
 }
@@ -4632,6 +4637,94 @@ document.getElementById('chat-export')?.addEventListener('click', async ()=>{
     setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
   }catch(e){ chatSetState('Export failed: '+(e&&e.message||e)); }
 });
+
+// v0.3.8.48 — the approval gate on the conversation. Skip-all is a real decision: confirmed in
+// words. The refusal path snaps the selector back; nothing changes silently.
+document.getElementById('chat-policy')?.addEventListener('change', async e=>{
+  const sel=e.target, want=sel.value, was=sel.dataset.current||'ask';
+  if(!chatActiveId){ sel.value=was; chatSetState('Open a conversation first.'); return; }
+  if(want==='bypass' && !confirm('Skip all approvals for this conversation?\n\nThe colony will act '
+      +'without asking you first. Authentication, workspace boundaries, capability gates and '
+      +'verification requirements still apply — this skips prompts, not security.')){
+    sel.value=was; return;
+  }
+  sel.disabled=true;
+  const r=await api('/conversations/'+encodeURIComponent(chatActiveId)+'/policy','POST',{policy:want});
+  sel.disabled=false;
+  if(r&&r.success){ sel.dataset.current=want; chatSetState(r.message||''); }
+  else{ sel.value=was; chatSetState((r&&r.message)||'Could not change the approval mode.'); }
+});
+
+/* v0.3.8.48 — the change, reviewed where the work happened. Every proposed patch from this
+ * conversation's missions renders as a card IN the thread: path, risk, verification, and the
+ * actions. Approve & apply runs the two backend transitions in sequence, keeping both audit
+ * records; nothing navigates away. */
+let chatPatchFingerprint='';
+async function chatRenderPatches(d, thread){
+  const missions=d.mission_ids||[];
+  if(!missions.length){ chatPatchFingerprint=''; return; }
+  const rows=[];
+  for(const mid of missions.slice(-3)){
+    const r=await api('/patches?mission_id='+encodeURIComponent(mid)+'&limit=20');
+    if(r&&r.success&&Array.isArray(r.data)) rows.push(...r.data);
+  }
+  const print=rows.map(p=>p.id+':'+p.status).join('|');
+  if(print===chatPatchFingerprint) return;
+  chatPatchFingerprint=print;
+  thread.querySelectorAll('.patch-card').forEach(el=>el.remove());
+  for(const p of rows){
+    const card=document.createElement('div');
+    card.className='patch-card'+(p.status==='applied'?' applied':p.status==='rejected'?' rejected':'');
+    card.innerHTML=`<div class="patch-hd"><b>Proposed change</b>
+        <span class="sch-badge">${escapeHtml(p.status||'')}</span>
+        ${p.risk?`<span class="sch-badge">risk: ${escapeHtml(p.risk)}</span>`:''}
+        ${p.verified?`<span class="sch-badge">verified</span>`:''}
+      </div>
+      <div class="patch-path">${escapeHtml(p.file||p.path||'')}</div>
+      <div class="patch-diff" hidden></div>
+      <div class="patch-actions">
+        <button class="btn btn-ghost" data-p-diff>View diff</button>
+        ${p.status==='proposed'?`<button class="btn btn-primary" data-p-approve>Approve &amp; apply</button>
+        <button class="btn btn-ghost" data-p-reject>Reject</button>`:''}
+        ${p.status==='applied'?`<button class="btn btn-ghost" data-p-revert>Revert</button>`:''}
+      </div>`;
+    thread.appendChild(card);
+    const pid=p.id;
+    card.querySelector('[data-p-diff]')?.addEventListener('click', async ()=>{
+      const box=card.querySelector('.patch-diff');
+      if(!box.hidden){ box.hidden=true; return; }
+      const det=await api('/patches/'+encodeURIComponent(pid)+'/detail');
+      box.hidden=false;
+      box.textContent=(det&&det.success&&det.data&&(det.data.diff||det.data.new_content))||
+        (det&&det.message)||'No diff available.';
+    });
+    card.querySelector('[data-p-approve]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true; b.textContent='Applying…';
+      const ap=await fetch(url('/patches/'+encodeURIComponent(pid)+'/approve'),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      if(!(ap&&ap.success!==false)){ chatSetState((ap&&ap.message)||'Approve failed.'); b.disabled=false; b.textContent='Approve & apply'; return; }
+      const approvalId=ap&&ap.data&&(ap.data.approval_id||ap.data.id);
+      const done=approvalId?await fetch(url('/apply/'+encodeURIComponent(approvalId)),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null):null;
+      chatSetState((done&&done.message)||(ap&&ap.message)||'Approved.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+    card.querySelector('[data-p-reject]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true;
+      const r2=await fetch(url('/patches/'+encodeURIComponent(pid)+'/reject'),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      chatSetState((r2&&r2.message)||'Rejected.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+    card.querySelector('[data-p-revert]')?.addEventListener('click', async e2=>{
+      const b=e2.target; b.disabled=true;
+      const r2=await fetch(url('/revert/'+encodeURIComponent(pid)),
+        {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}}).then(x=>x.json()).catch(()=>null);
+      chatSetState((r2&&r2.message)||'Reverted.');
+      apiCacheBust('/patches'); chatPatchFingerprint=''; chatFingerprint=''; chatOpen(chatActiveId);
+    });
+  }
+}
 
 document.getElementById('chat-colony-toggle')?.addEventListener('click', ()=>chatToggleColony());
 document.getElementById('chat-colony-close')?.addEventListener('click', ()=>chatToggleColony(false));
