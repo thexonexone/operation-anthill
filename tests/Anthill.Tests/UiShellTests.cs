@@ -1018,7 +1018,7 @@ public class UiShellTests
         Assert.Contains("[\"cancelled\"] = state.Cancelled", ApiHostSource.All());
         Assert.Contains("d.cancelled ? 'Stopped", js);
         // The refusal summary outlives the refresh that used to overwrite it.
-        var send = BodyOf(js, "async function chatSend()");
+        var send = BodyOf(js, "async function chatSend(mode)");
         Assert.Contains("await chatOpen(chatActiveId);", send);
         Assert.Contains("if(note) chatSetState(note);", send);
 
