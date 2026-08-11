@@ -55,6 +55,19 @@ and you can choose a different model that better fits your hardware.
 
 ## Windows quick start
 
+**The desktop app.** `AnthillDesktop.exe` is ANTHILL as a native Windows application — the same
+colony and the same console the server install runs, in its own window instead of a browser tab.
+Start it and it boots the colony in-process; if an ANTHILL server is already running on this
+machine it attaches to that one instead of starting a second colony. It needs the Microsoft Edge
+WebView2 Runtime, which Windows 11 and updated Windows 10 already include (otherwise:
+[aka.ms/webview2](https://aka.ms/webview2)). Build it from source with:
+
+```powershell
+dotnet publish src/Anthill.Desktop/Anthill.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish/win-x64-desktop
+```
+
+The steps below are the browser-based server install; the desktop app replaces steps 3–4 only.
+
 ### 1. Install Ollama
 
 Download and install [Ollama for Windows](https://ollama.com/download/windows).
