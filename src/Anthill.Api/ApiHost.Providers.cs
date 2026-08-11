@@ -597,6 +597,10 @@ public static partial class ApiHost
             try { body = await ctx.Request.ReadFromJsonAsync<ProjectRequest>(); }
             catch { return ApiJson.Error("Invalid request body.", "bad_request"); }
 
+            // v0.3.8.48: changing the default policy is a standing decision — recorded with the
+            // caller's name and the moment. Unchanged fields keep their existing attribution.
+            var who = CurrentUsername(ctx) ?? "operator";
+            var policyChanged = Enum.TryParse<EscalationPolicy>(body?.DefaultPolicy, ignoreCase: true, out var newPolicy);
             Queen.Memory.SaveProject(project with
             {
                 Name = string.IsNullOrWhiteSpace(body?.Name) ? project.Name : body!.Name!.Trim(),
@@ -604,6 +608,11 @@ public static partial class ApiHost
                 Path = body?.Path is null ? project.Path
                      : (string.IsNullOrWhiteSpace(body.Path) ? null : body.Path.Trim()),
                 Archived = body?.Archived ?? project.Archived,
+                DefaultPolicy = policyChanged ? newPolicy : project.DefaultPolicy,
+                DefaultPolicyBy = policyChanged ? (newPolicy == EscalationPolicy.Ask ? null : who) : project.DefaultPolicyBy,
+                DefaultPolicyAt = policyChanged ? (newPolicy == EscalationPolicy.Ask ? null : AnthillTime.NowUtc()) : project.DefaultPolicyAt,
+                DefaultProvider = body?.DefaultProvider ?? project.DefaultProvider,
+                DefaultModel = body?.DefaultModel ?? project.DefaultModel,
                 UpdatedAt = AnthillTime.NowUtc(),
             });
             return ApiJson.Ok(null, "Project updated.");
@@ -770,6 +779,10 @@ public static partial class ApiHost
                 ["id"] = project.Id, ["name"] = project.Name,
                 ["description_md"] = project.DescriptionMd, ["path"] = project.Path,
                 ["archived"] = project.Archived,
+                ["default_policy"] = project.EffectiveDefaultPolicy.ToString().ToLowerInvariant(),
+                ["default_policy_by"] = project.DefaultPolicyBy,
+                ["default_provider"] = project.DefaultProvider, ["default_model"] = project.DefaultModel,
+                ["schedule_count"] = Queen.Memory.LoadProjectSchedules(id).Count,
                 ["conversations"] = Queen.Memory.LoadProjectConversations(id).Select(c => new Dictionary<string, object?>
                 {
                     ["id"] = c.Id, ["title"] = c.Title, ["pinned"] = c.Pinned,

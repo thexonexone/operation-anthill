@@ -469,6 +469,13 @@ public sealed class ProjectRequest
     public string? DescriptionMd { get; set; }
     public string? Path { get; set; }
     public bool? Archived { get; set; }
+    /// <summary>v0.3.8.48: ask | autoapprove | bypass. Attributed to the caller when changed.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("default_policy")]
+    public string? DefaultPolicy { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("default_provider")]
+    public string? DefaultProvider { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("default_model")]
+    public string? DefaultModel { get; set; }
 }
 
 /// <summary>v3.7.0: one turn, with the operator's answers for anything it needs permission to do.</summary>
