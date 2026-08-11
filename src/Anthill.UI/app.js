@@ -2053,7 +2053,7 @@ async function pollHealth(){
     // Alert line — nudge reclaimable disk
     const alert=document.getElementById('ov-health-alert');
     const reclaimable=(d.backup_count||0)>(d.max_db_backups||10);
-    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`? ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings ? Maintenance ? Flush Cache`; }
+    if(diskWarn && reclaimable){ alert.style.display=''; alert.textContent=`⚠ ${humanBytes(d.backup_bytes)} of backups reclaimable · Settings → Maintenance → Flush Cache`; }
     else alert.style.display='none';
   }catch{}
 }
@@ -5841,7 +5841,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     const baseUrl=card.querySelector('.pv-baseurl').value.trim();
     try{
       const r=await api('/providers','POST',{provider,api_key:key||undefined,base_url:baseUrl||undefined});
-      if(r.success){setMsg('Saved ?',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
+      if(r.success){setMsg('Saved ✓',true);card.querySelector('.pv-key').value='';await loadProvidersTab();}
       else setMsg(r.message||'Failed',false);
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
@@ -5850,7 +5850,7 @@ document.getElementById('providers-grid').addEventListener('click',async(e)=>{
     setMsg('Testing…',true);
     try{
       const r=await api('/providers/'+encodeURIComponent(provider)+'/test','POST');
-      setMsg(r.success?'Verified ?':(r.message||'Test failed'),r.success);
+      setMsg(r.success?'Verified ✓':(r.message||'Test failed'),r.success);
       await loadProvidersTab();
     }catch(err){setMsg('Failed: '+err.message,false);}
   }
@@ -6636,7 +6636,7 @@ document.getElementById('antcfg-save').addEventListener('click',async()=>{
     try{await saveModelRoute(routeUpdate);}
     catch(e){msg.style.color='var(--red)';msg.textContent='Routes failed: '+e.message;return;}
   }
-  msg.style.color='var(--green)';msg.textContent='Saved ?';setTimeout(()=>msg.textContent='',2500);
+  msg.style.color='var(--green)';msg.textContent='Saved ✓';setTimeout(()=>msg.textContent='',2500);
 });
 
 document.getElementById('antcfg-reset').addEventListener('click',async()=>{

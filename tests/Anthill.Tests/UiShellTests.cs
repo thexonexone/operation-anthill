@@ -1211,6 +1211,21 @@ public class UiShellTests
     }
 
     /// <summary>
+    /// v0.3.8.48 (defect 20): corrupted replacement glyphs are gone and stay gone. These exact
+    /// strings shipped with a literal '?' where an arrow or check once lived — mojibake from a
+    /// lost encoding pass — and every one of them read as a broken product.
+    /// </summary>
+    [Fact]
+    public void NoCorruptedGlyphs_InVisibleText()
+    {
+        var ui = Ui("index.html") + Ui("app.js");
+
+        foreach (var bad in new[] { "Settings ? Colony", "Configuration ? Security",
+            "Configuration ? Shell", "Saved ?'", "'Verified ?'", "Maintenance ? Flush" })
+            Assert.DoesNotContain(bad, ui);
+    }
+
+    /// <summary>
     /// v0.3.8.48: approvals live ON the conversation. The selector carries the three exact
     /// user-facing labels mapped to the three policies the backend has always had; Skip-all
     /// requires a spoken confirmation and a refusal snaps the selector back; and proposed
