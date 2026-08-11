@@ -2223,11 +2223,25 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         </div>
         <div class="pv-tabs" role="tablist">
           <button class="pv-tab active" data-tab="chat" role="tab">Chat</button>
+          <button class="pv-tab" data-tab="objectives" role="tab">Objectives</button>
           <button class="pv-tab" data-tab="schedules" role="tab">Schedules</button>
           <button class="pv-tab" data-tab="history" role="tab">History</button>
           <button class="pv-tab" data-tab="settings" role="tab">Settings</button>
         </div>
         <div id="pv-body-chat" class="pv-body"><div class="hud-state">Loading…</div></div>
+        <div id="pv-body-objectives" class="pv-body" hidden>
+          <div class="card" style="margin-bottom:10px;"><div style="padding:12px;display:flex;flex-direction:column;gap:7px;">
+            <b style="font-size:12px;">New objective in this project</b>
+            <input class="provider-input" id="pv-obj-title" placeholder="Title" maxlength="120">
+            <input class="provider-input" id="pv-obj-charter" placeholder="The standing goal this objective keeps working toward">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="provider-input" id="pv-obj-maxruns" type="number" value="10" style="width:80px" title="Max runs (0 = unlimited)">
+              <button class="btn btn-primary" id="pv-obj-create">Add objective</button>
+              <span class="save-msg" id="pv-obj-msg"></span>
+            </div>
+          </div></div>
+          <div id="pv-obj-list"><div class="hud-state">Loading…</div></div>
+        </div>
         <div id="pv-body-schedules" class="pv-body" hidden>
           <div class="sub" style="margin:8px 0;">Schedules execute while the Anthill host is running — there is no cloud.</div>
           <div class="card" style="margin-bottom:10px;"><div style="padding:12px;display:flex;flex-direction:column;gap:7px;">
@@ -2256,7 +2270,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
               <span class="save-msg" id="sch-msg"></span>
             </div>
           </div></div>
+          <div class="chat-plan-hd" style="margin:4px 0;">Scheduled tasks</div>
           <div id="sch-list"><div class="hud-state">Loading…</div></div>
+          <div class="chat-plan-hd" style="margin:14px 0 4px;">Rules / event triggers</div>
+          <div id="sch-rules"><div class="hud-state">Loading…</div></div>
         </div>
         <div id="pv-body-history" class="pv-body" hidden><div class="hud-state">Loading…</div></div>
         <div id="pv-body-settings" class="pv-body" hidden>
@@ -2963,7 +2980,7 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
           <div class="section-head" style="margin-top:0;">Add Objective</div>
           <div class="form-row">
             <div class="form-field"><label>Title</label><input class="form-input" id="obj-title" type="text" placeholder="short title"></div>
-            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="what the Director should keep working on" style="width:100%"></div>
+            <div class="form-field" style="flex:1;min-width:220px;"><label>Charter (standing goal)</label><input class="form-input" id="obj-charter" type="text" placeholder="the standing goal this objective keeps working toward" style="width:100%"></div>
             <div class="form-field"><label>Priority</label><input class="form-input" id="obj-priority" type="number" value="0" style="width:70px"></div>
             <div class="form-field"><label>Max Runs <span style="font-weight:400;color:var(--dim)">(0=&infin;)</span></label><input class="form-input" id="obj-maxruns" type="number" value="0" style="width:70px"></div>
             <div class="form-field" style="justify-content:flex-end;"><button class="btn btn-primary" id="obj-add">Add</button></div>
@@ -2980,6 +2997,10 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
         <div class="card" style="margin-bottom:16px;">
           <div class="box-toggle-head" data-onclick="toggleBoxBody('obj-box',this)" style="padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
             <div class="section-head" style="margin:0;padding:0;" id="obj-count">Objectives</div>
+            <label class="sr-only" for="obj-filter-project">Filter by project</label>
+            <select class="provider-input" id="obj-filter-project" style="width:180px;font-size:10px;"><option value="">All projects</option></select>
+            <label class="sr-only" for="obj-filter-search">Search objectives</label>
+            <input class="provider-input" id="obj-filter-search" type="search" placeholder="Search…" style="width:160px;font-size:10px;">
             <span class="box-caret" style="color:var(--dim);font-size:11px;">▾</span>
           </div>
           <div id="obj-box" style="max-height:640px;overflow-y:auto;overflow-x:auto;">

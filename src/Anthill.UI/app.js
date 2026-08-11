@@ -3815,6 +3815,20 @@ async function objLoadProjectNames(){
   const r=await api('/projects');
   objProjectNames=Object.fromEntries(((r&&r.data&&r.data.projects)||[]).map(p=>[p.id,p.name]));
 }
+let objFilterProject='', objFilterSearch='';
+function objMatchesFilters(o){
+  if(objFilterProject && (o.project_id||'')!==objFilterProject) return false;
+  if(objFilterSearch){
+    const q=objFilterSearch.toLowerCase();
+    if(!((o.title||'').toLowerCase().includes(q)||(o.charter||'').toLowerCase().includes(q))) return false;
+  }
+  return true;
+}
+if(!window.__objFiltersWired){ window.__objFiltersWired=true;
+  document.getElementById('obj-filter-project')?.addEventListener('change',e=>{ objFilterProject=e.target.value; loadObjBoard(); });
+  document.getElementById('obj-filter-search')?.addEventListener('input',e=>{ clearTimeout(window.__objFT);
+    window.__objFT=setTimeout(()=>{ objFilterSearch=e.target.value.trim(); loadObjBoard(); },250); });
+}
 async function loadObjBoard(){
   const board=document.getElementById('ob-board'); if(!board) return;
   board.innerHTML='<div class="hud-state"><div class="hud-spinner"></div>Loading objectives…</div>';
@@ -3822,8 +3836,13 @@ async function loadObjBoard(){
     const r=await api('/objectives'); if(!r.success) throw new Error(r.message);
     const objectives=Array.isArray(r.data)?r.data:[];
     setEl('ob-count',`${objectives.length} objective${objectives.length===1?'':'s'}`);
+    // v0.3.8.48: project + search filters apply before laning; the dropdown carries live names.
+    const pf=document.getElementById('obj-filter-project');
+    if(pf&&pf.options.length<=1)
+      for(const [pid,name] of Object.entries(objProjectNames))
+        pf.insertAdjacentHTML('beforeend',`<option value="${escapeHtml(pid)}">${escapeHtml(name)}</option>`);
     const byLane={}; OB_LANES.forEach(([k])=>byLane[k]=[]);
-    objectives.forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
+    objectives.filter(objMatchesFilters).forEach(o=>{ (byLane[objLane(o)]||byLane.active).push(o); });
     board.innerHTML=OB_LANES.map(([key,name,col])=>{
       const items=byLane[key]||[];
       const cards=items.length ? items.map(o=>objCard(o)).join('') : '<div class="ob-lane-empty">—</div>';
@@ -4871,7 +4890,7 @@ async function loadProjectView(){
     pvProject.schedule_count+' schedule(s)',
     pvProject.archived?'archived':null,
   ].filter(Boolean).join(' · '));
-  pvRenderChat(); pvRenderSchedules(); pvRenderHistory(); pvFillSettings();
+  pvRenderChat(); pvRenderObjectives(); pvRenderSchedules(); pvRenderRules(); pvRenderHistory(); pvFillSettings();
 }
 
 function pvTab(name){
@@ -4901,6 +4920,55 @@ function pvRenderChat(){
   host.querySelectorAll('[data-open]').forEach(el=>el.addEventListener('click',()=>{
     chatComposingNew=false; go('/chat'); chatOpen(el.dataset.open);
   }));
+}
+
+/* v0.3.8.48 — the project's objectives: created HERE, in the owning project, exactly as the
+ * directive orders. The global board is the aggregate view; this is where they are born. */
+async function pvRenderObjectives(){
+  const host=document.getElementById('pv-obj-list'); if(!host) return;
+  const r=await api('/objectives');
+  const mine=((r&&r.data)||[]).filter(o=>o.project_id===projectViewId);
+  host.innerHTML=mine.length?mine.map(o=>`<div class="card" style="margin-bottom:6px;"><div style="padding:9px 13px;font-size:11px;">
+      <b style="color:var(--text)">${escapeHtml(o.title||'')}</b>
+      <span class="sch-badge" style="margin-left:7px;">${escapeHtml(o.status||'')}</span>
+      <span class="sch-badge">runs ${escapeHtml(String(o.run_count||0))}${o.max_runs?'/'+escapeHtml(String(o.max_runs)):''}</span>
+      ${o.last_run_at?`<span style="font-size:9px;color:var(--dim);margin-left:6px;">last ${escapeHtml(chatTurnTime(o.last_run_at)||'')}</span>`:''}
+      <div style="font-size:10px;color:var(--muted);margin-top:3px;">${escapeHtml((o.charter||'').slice(0,140))}</div>
+    </div></div>`).join('')
+    :'<div class="hud-state">No objectives in this project yet.</div>';
+}
+if(!window.__pvObjWired){ window.__pvObjWired=true;
+  document.getElementById('pv-obj-create')?.addEventListener('click', async ()=>{
+    const btn=document.getElementById('pv-obj-create'); btn.disabled=true;
+    const r=await api('/objectives','POST',{
+      title:document.getElementById('pv-obj-title').value.trim(),
+      charter:document.getElementById('pv-obj-charter').value.trim(),
+      max_runs:+document.getElementById('pv-obj-maxruns').value||0,
+      project_id:projectViewId,
+    });
+    btn.disabled=false;
+    const msg=document.getElementById('pv-obj-msg');
+    if(msg){ msg.textContent=(r&&r.message)||'Create failed.'; msg.className='save-msg '+(r&&r.success?'text-green':'text-red'); }
+    if(r&&r.success){ ['pv-obj-title','pv-obj-charter'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';}); pvRenderObjectives(); }
+  });
+}
+
+/* v0.3.8.48 — rules, quarantined honestly. The deterministic homelab rules predate project
+ * ownership; the directive forbids silently attaching them to any project, so they appear here
+ * as what they are: legacy triggers with no project owner, managed in the homelab deck until
+ * each is claimed. No global Automation domain remains. */
+async function pvRenderRules(){
+  const host=document.getElementById('sch-rules'); if(!host) return;
+  const r=await api('/homelab/automation/rules').catch(()=>null);
+  const rules=(r&&r.success&&(r.data&&r.data.rules||r.data))||[];
+  host.innerHTML=(Array.isArray(rules)&&rules.length)
+    ? `<div class="sub" style="margin-bottom:6px;">Legacy rules with no project owner — quarantined, not attached. Manage them in the homelab deck until each is claimed by a project.</div>`
+      + rules.slice(0,20).map(x=>`<div class="card" style="margin-bottom:5px;"><div style="padding:8px 12px;font-size:10px;color:var(--muted);">
+          <b style="color:var(--text)">${escapeHtml(x.name||x.id||'rule')}</b>
+          <span class="sch-badge" style="margin-left:6px;">${x.enabled?'enabled':'paused'}</span>
+          <span class="sch-badge">no project owner</span>
+        </div></div>`).join('')
+    : '<div class="hud-state">No event-trigger rules exist yet.</div>';
 }
 
 async function pvRenderSchedules(){
@@ -4991,13 +5059,26 @@ async function pvRenderHistory(){
   const all=((hist&&hist.data)||[]).filter(m=>ids.includes(String(m.id)));
   host.innerHTML = (pvProject.conversations||[]).length
     ? `<div class="sub" style="margin:8px 0;">Everything this project has done — its conversations and the missions they started.</div>`
-      + all.map(m=>`<div class="card" style="margin-bottom:6px;"><div style="padding:9px 13px;font-size:11px;color:var(--muted);">
+      + all.map(m=>`<div class="card" style="margin-bottom:6px;cursor:pointer;" data-mission="${escapeHtml(String(m.id))}"><div style="padding:9px 13px;font-size:11px;color:var(--muted);">
           <b style="color:var(--text)">${escapeHtml((m.goal||'').slice(0,90))}</b>
           <span class="sch-badge" style="margin-left:7px;">${escapeHtml(m.status||'')}</span>
           ${m.success_score!=null?`<span class="sch-badge">score ${escapeHtml(String(m.success_score))}</span>`:''}
+          <div class="pv-mission-detail" hidden style="margin-top:7px;font-size:10px;white-space:pre-wrap;"></div>
         </div></div>`).join('')
       + (all.length?'':'<div class="hud-state">No missions yet.</div>')
     : '<div class="hud-state">Nothing yet.</div>';
+  // v0.3.8.48: mission detail INLINE — the task trail and result open in place, no legacy page.
+  host.querySelectorAll('[data-mission]').forEach(card=>card.addEventListener('click', async ()=>{
+    const box=card.querySelector('.pv-mission-detail');
+    if(!box.hidden){ box.hidden=true; return; }
+    box.hidden=false; box.textContent='Loading…';
+    const d=await api('/missions/'+encodeURIComponent(card.dataset.mission)).catch(()=>null);
+    const det=(d&&d.success&&d.data)||{};
+    box.textContent=[
+      det.user_result||det.result||'',
+      (det.tasks||[]).map(t=>`• ${t.title||''} — ${t.status||''}`).join('\n'),
+    ].filter(Boolean).join('\n\n')||'No detail recorded.';
+  }));
 }
 
 function pvFillSettings(){
