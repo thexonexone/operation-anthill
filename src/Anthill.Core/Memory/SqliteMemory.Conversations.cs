@@ -129,6 +129,38 @@ public sealed partial class SqliteMemory
     private static int? ReadNullableInt(object? value) =>
         value is null || value is DBNull ? null : Convert.ToInt32(value);
 
+    // ---- v0.3.8.47: attachments -----------------------------------------------------------------
+
+    public void SaveAttachment(ConversationAttachment attachment)
+    {
+        if (attachment is null || string.IsNullOrWhiteSpace(attachment.Id)) return;
+        lock (_writeLock)
+        {
+            using var conn = Connect();
+            NonQuery(conn, null,
+                @"INSERT OR REPLACE INTO conversation_attachments
+                    (id, conversation_id, turn_id, filename, bytes, content, created_at)
+                  VALUES (@id, @cid, @tid, @name, @bytes, @content, @created)",
+                ("@id", attachment.Id), ("@cid", attachment.ConversationId),
+                ("@tid", attachment.TurnId), ("@name", attachment.Filename),
+                ("@bytes", attachment.Bytes), ("@content", attachment.Content),
+                ("@created", attachment.CreatedAt.ToIso()));
+        }
+    }
+
+    public IReadOnlyList<ConversationAttachment> LoadTurnAttachments(string turnId) =>
+        Query("SELECT * FROM conversation_attachments WHERE turn_id=@tid ORDER BY filename",
+            ("@tid", turnId ?? ""))
+        .Select(row => new ConversationAttachment(
+            row.GetValueOrDefault("id")?.ToString() ?? "",
+            row.GetValueOrDefault("conversation_id")?.ToString() ?? "",
+            row.GetValueOrDefault("turn_id")?.ToString() ?? "",
+            row.GetValueOrDefault("filename")?.ToString() ?? "",
+            Convert.ToInt64(row.GetValueOrDefault("bytes") ?? 0L),
+            row.GetValueOrDefault("content")?.ToString() ?? "")
+        { CreatedAt = AnthillTime.ParseIsoOrNow(row.GetValueOrDefault("created_at")?.ToString()) })
+        .ToList();
+
     /// <summary>
     /// Record what was decided about one side-effecting action.
     ///

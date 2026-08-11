@@ -1198,12 +1198,15 @@ code{font-family:var(--mono);font-size:10px;background:var(--inner);padding:1px 
 /* v0.3.8.47 (operator: "the chat bubbles look like shit"): a bubble is as wide as what it says.
    fit-content sizes to the message; the max keeps long answers readable; min keeps the header row
    (speaker · time · copy) from crushing one-word bubbles. */
-.chat-turn{width:fit-content;min-width:130px;max-width:min(760px,92%);font-size:12px;
+.chat-turn{width:fit-content;max-width:min(760px,92%);font-size:12px;
   line-height:1.6;white-space:pre-wrap;padding:10px 13px;border-radius:9px;}
 .chat-turn.user{align-self:flex-end;background:rgba(34,211,238,.10);border:1px solid rgba(34,211,238,.22);color:var(--text);}
 .chat-turn.colony{align-self:flex-start;background:var(--panel);border:1px solid var(--border);color:var(--muted);}
-.chat-turn .who{display:block;font-size:9px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--dim);margin-bottom:5px;}
+/* v0.3.8.47: the header is ONE quiet line — name, time, cost, actions — flex so nothing stacks
+   or injects height. Bubbles hug their text; the header never exceeds it visually. */
+.chat-turn .who{display:flex;align-items:center;gap:7px;font-size:9px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--dim);margin-bottom:4px;white-space:nowrap;}
+.chat-turn .who .chat-when,.chat-turn .who .chat-tok{margin-left:0;}
 /* v0.3.8.42 (§13): per-message copy — quiet until the message is hovered or the control focused. */
 .chat-copy{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;
   padding:0 4px;opacity:0;transition:opacity var(--t);vertical-align:middle;}

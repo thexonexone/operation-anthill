@@ -4168,12 +4168,18 @@ async function chatOpen(id){
               : '';
             // v0.3.8.47: ✎ on your own messages — puts the text back in the composer to revise
             // and RESEND as a new turn. The record is an audit trail; editing never rewrites it.
-            return `<div class="chat-turn ${mine?'user':'colony'}">
-              <span class="who">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}
-                ${when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:''}${tok}
-                ${mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:''}
-                <button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>${chatRenderContent(t.content)}
-            </div>`;
+            //
+            // BUILT WHITESPACE-TIGHT on purpose (found live, "the bubbles look like shit"): the
+            // bubble renders with pre-wrap, so any newline or indentation inside this template
+            // becomes literal blank space in every message. One string, no stray characters.
+            return `<div class="chat-turn ${mine?'user':'colony'}">`
+              + `<span class="who"><span class="who-name">${mine?'You':escapeHtml(t.model||t.provider||'Colony')}</span>`
+              + (when?`<span class="chat-when" title="${escapeHtml(String(t.created_at||''))}">${escapeHtml(when)}</span>`:'')
+              + tok
+              + (mine?`<button class="chat-copy chat-edit" data-i="${i}" title="Edit and resend as a new message" aria-label="Edit and resend">✎</button>`:'')
+              + `<button class="chat-copy" data-i="${i}" title="Copy message" aria-label="Copy message">⧉</button></span>`
+              + chatRenderContent(t.content)
+              + `</div>`;
           }).join('')
         : '<div class="hud-state">No messages yet.</div>';
       // CSP is script-src 'self' with no unsafe-inline, so handlers are bound, never inlined.

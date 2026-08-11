@@ -353,6 +353,13 @@ public sealed partial class SqliteMemory : IDisposable
             tools_offered_json TEXT NOT NULL DEFAULT '[]', tools_called_json TEXT NOT NULL DEFAULT '[]',
             mission_id TEXT, created_at TEXT NOT NULL)",
         @"CREATE INDEX IF NOT EXISTS idx_conversation_turns ON conversation_turns(conversation_id, ordinal)",
+        // v0.3.8.47: attachments — text files the operator handed a turn. TEXT content, capped at
+        // the API; a binary the colony cannot actually read is refused there, not stored as a lie.
+        @"CREATE TABLE IF NOT EXISTS conversation_attachments (
+            id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL,
+            filename TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0,
+            content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)",
+        @"CREATE INDEX IF NOT EXISTS idx_conversation_attachments ON conversation_attachments(turn_id)",
         // Decisions are their own table: an operator asking "why was this allowed" is asking about
         // ACTIONS, not turns, and one turn can take several. Refusals are stored too — a refused
         // attempt is the one nobody saw happen.
